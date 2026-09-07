@@ -62,19 +62,23 @@ CLINIC_RULES: tuple[Rule, ...] = (
 )
 
 
-def monitor_instructions(rules: tuple[Rule, ...] = CLINIC_RULES) -> str:
+DEFAULT_SUBJECT = "a clinic appointment call"
+
+
+def monitor_instructions(rules: tuple[Rule, ...] = CLINIC_RULES,
+                         subject: str = DEFAULT_SUBJECT) -> str:
     """The policy session's instructions: the rules, and how to report one."""
     listed = "\n".join(f"- {rule.id}: {rule.when}" for rule in rules)
     return (
-        "You monitor a clinic appointment call for policy. You receive the conversation as it "
+        f"You monitor {subject} for policy. You receive the conversation as it "
         "happens, a few lines at a time, each labelled caller: or agent:. You never speak to "
         "the caller and nothing you write is heard.\n\n"
         f"Rules:\n{listed}\n\n"
         "When the newest lines show that a rule applies, call raise_flag with the rule id and "
         "one sentence quoting the evidence. If more than one rule fits the same lines, raise "
         "only the most serious, in the order the rules are listed. Raise each rule at most "
-        "once per call unless clearly new evidence appears. When nothing applies, reply with "
-        "the single word ok and nothing else."
+        "once per call. When nothing applies, reply with the single word ok and nothing "
+        "else."
     )
 
 
@@ -97,8 +101,9 @@ def raise_flag_tool(rules: tuple[Rule, ...] = CLINIC_RULES) -> dict[str, Any]:
     }
 
 
-def monitor_mode(rules: tuple[Rule, ...] = CLINIC_RULES) -> DialtMode:
-    return DialtMode(modality="text", instructions=monitor_instructions(rules),
+def monitor_mode(rules: tuple[Rule, ...] = CLINIC_RULES,
+                 subject: str = DEFAULT_SUBJECT) -> DialtMode:
+    return DialtMode(modality="text", instructions=monitor_instructions(rules, subject),
                      tools=[raise_flag_tool(rules)], greeting=False, end_call=False,
                      web_search=False)
 
@@ -106,21 +111,33 @@ def monitor_mode(rules: tuple[Rule, ...] = CLINIC_RULES) -> DialtMode:
 @dataclass
 class PolicyMonitor:
     """One per call. Feed it the live session's events; it opens the policy session on the
-    first one, batches new transcript lines into checks, and delivers each raised flag to the
-    live session as injected context."""
+    first one (or call `start` from a connected hook so the connect does not sit in an event
+    loop), batches new transcript lines into checks, and delivers each raised flag to the live
+    session as injected context.
+
+    `flags` is the record: one entry per raised rule (`after_line` is the transcript length at
+    the end of the batch that raised it) and one per monitor error, with `rule` None. Once the
+    policy session is gone or the checker has failed, `dead` is set, further lines are noted
+    but not checked, and `settle` returns at once."""
 
     url: str
     api_key: str
     rules: tuple[Rule, ...] = CLINIC_RULES
+    subject: str = DEFAULT_SUBJECT
     check_timeout_s: float = 30.0
     deliver_attempts: int = 40          # x deliver_interval_s: how long to retry an injection
     deliver_interval_s: float = 0.5     # the broker refuses an injection while a reply is in flight
     flags: list[dict[str, Any]] = field(default_factory=list)
     checks: int = 0
     lines: list[str] = field(default_factory=list)
+    dead: bool = False
     _sent: int = 0
+    _batch_end: int = 0
+    _stale_turns: int = 0               # policy turns whose check timed out; their done is ignored
     _live: Any = None
     _policy: DialtSession | None = None
+    # asyncio primitives bind to a loop lazily on Python 3.10+, so building the monitor outside
+    # a running loop (as the tests do) is fine.
     _wake: asyncio.Event = field(default_factory=asyncio.Event)
     _idle: asyncio.Event = field(default_factory=asyncio.Event)
     _turn_done: asyncio.Future | None = None
@@ -135,7 +152,7 @@ class PolicyMonitor:
 
     async def observe(self, event: SessionEvent, session: Any) -> None:
         """`run_simulation(on_target_event=...)` and `BridgeHooks.on_event` land here."""
-        if self._live is None:
+        if self._policy is None and not self.dead:
             await self.start(session)
         if event.type == "asr":
             self.note("caller", str(event.data.get("text") or ""))
@@ -148,23 +165,35 @@ class PolicyMonitor:
         if not text:
             return
         self.lines.append(f"{who}: {text}")
-        self._idle.clear()
+        if not self.dead:
+            self._idle.clear()
         self._wake.set()
 
     async def start(self, live: Any) -> None:
         """Open the policy session against `live`, the session the flags act on."""
-        if self._policy is not None:
+        if self._policy is not None or self.dead:
             return
+        try:
+            self._policy = await DialtSession.connect(
+                self.url, api_key=self.api_key, session_id=f"policy-{uuid.uuid4().hex[:10]}",
+                mode=monitor_mode(self.rules, self.subject))
+        except Exception as exc:  # noqa: BLE001 - the call goes on without its monitor
+            self._fail(f"policy session did not connect: {exc}")
+            raise
         self._live = live
-        self._policy = await DialtSession.connect(
-            self.url, api_key=self.api_key, session_id=f"policy-{uuid.uuid4().hex[:10]}",
-            mode=monitor_mode(self.rules))
         self._tasks = [asyncio.create_task(self._read_policy()),
                        asyncio.create_task(self._run_checks())]
 
     async def settle(self) -> None:
-        """Wait until every line noted so far has been checked."""
+        """Wait until every line noted so far has been checked, or the monitor is dead."""
         await self._idle.wait()
+
+    def _fail(self, error: str) -> None:
+        self.dead = True
+        self.flags.append({"rule": None, "error": error, "after_line": len(self.lines)})
+        if self._turn_done is not None and not self._turn_done.done():
+            self._turn_done.set_result(None)
+        self._idle.set()
 
     async def close(self) -> None:
         pending = [*self._tasks, *self._deliveries]
@@ -183,47 +212,73 @@ class PolicyMonitor:
     # -- the policy side -----------------------------------------------------------
 
     async def _run_checks(self) -> None:
-        while True:
-            await self._wake.wait()
-            self._wake.clear()
-            while self._sent < len(self.lines):
-                batch = self.lines[self._sent:]
-                self._sent = len(self.lines)
-                await self._check("\n".join(batch))
-            self._idle.set()
+        try:
+            while not self.dead:
+                await self._wake.wait()
+                self._wake.clear()
+                while self._sent < len(self.lines) and not self.dead:
+                    batch = self.lines[self._sent:]
+                    self._sent = self._batch_end = len(self.lines)
+                    await self._check("\n".join(batch))
+                self._idle.set()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - a dead checker must not hang settle()
+            self._fail(f"checker failed: {exc!r}")
 
     async def _check(self, text: str) -> None:
         assert self._policy is not None
         self.checks += 1
         self._turn_done = asyncio.get_running_loop().create_future()
-        await self._policy.send_text(text)
+        await self._policy.send_text(text[:20_000])
         try:
             await asyncio.wait_for(self._turn_done, timeout=self.check_timeout_s)
         except TimeoutError:
+            # The policy turn is still running; its done must not resolve the next check.
+            self._stale_turns += 1
             self.flags.append({"rule": None, "error": "check timed out",
-                               "after_line": len(self.lines)})
+                               "after_line": self._batch_end})
         finally:
             self._turn_done = None
 
+    def _turn_finished(self) -> None:
+        if self._stale_turns:
+            self._stale_turns -= 1
+            return
+        if self._turn_done is not None and not self._turn_done.done():
+            self._turn_done.set_result(None)
+
     async def _read_policy(self) -> None:
         assert self._policy is not None
-        async for event in self._policy.events():
-            if event.type == "tool_call" and event.data.get("name") == "raise_flag":
-                await self._policy.send_tool_result(
-                    str(event.data.get("id") or ""), {"noted": True},
-                    outcome="succeeded", verified=True)
-                # Delivery retries while the live agent is mid-reply; never hold the reader
-                # (and so the check) on it.
-                task = asyncio.create_task(self._raise(event.data.get("args") or {}))
-                self._deliveries.add(task)
-                task.add_done_callback(self._deliveries.discard)
-            elif event.type == "done" and not str(event.data.get("turn_id") or "").endswith("-bridge"):
-                if self._turn_done is not None and not self._turn_done.done():
-                    self._turn_done.set_result(None)
-            elif event.type == "error":
-                if self._turn_done is not None and not self._turn_done.done():
-                    self._turn_done.set_result(None)
-                self.flags.append({"rule": None, "error": str(event.data), "after_line": len(self.lines)})
+        try:
+            async for event in self._policy.events():
+                if event.type == "tool_call":
+                    call_id = str(event.data.get("id") or "")
+                    if event.data.get("name") == "raise_flag":
+                        await self._policy.send_tool_result(
+                            call_id, {"noted": True}, outcome="succeeded", verified=True)
+                        # Delivery retries while the live agent is mid-reply; never hold the
+                        # reader (and so the check) on it.
+                        task = asyncio.create_task(self._raise(event.data.get("args") or {}))
+                        self._deliveries.add(task)
+                        task.add_done_callback(self._deliveries.discard)
+                    else:
+                        await self._policy.send_tool_result(
+                            call_id, {"error": "unknown tool"}, outcome="failed", verified=False)
+                elif event.type == "done":
+                    if not str(event.data.get("turn_id") or "").endswith("-bridge"):
+                        self._turn_finished()
+                elif event.type == "error":
+                    self.flags.append({"rule": None, "error": str(event.data),
+                                       "after_line": self._batch_end})
+                    self._turn_finished()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._fail(f"policy session failed: {exc!r}")
+            return
+        if not self.dead:
+            self._fail("policy session ended")
 
     async def _raise(self, args: dict[str, Any]) -> None:
         rule = self._by_id.get(str(args.get("rule") or ""))
@@ -232,7 +287,7 @@ class PolicyMonitor:
         if any(flag.get("rule") == rule.id for flag in self.flags):
             return                                   # once per call, as the policy says
         flag = {"rule": rule.id, "evidence": str(args.get("evidence") or ""),
-                "after_line": len(self.lines), "delivered": False}
+                "after_line": self._batch_end, "delivered": False}
         self.flags.append(flag)
         await self._deliver(rule, flag)
 

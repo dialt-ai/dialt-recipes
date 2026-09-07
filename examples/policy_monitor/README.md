@@ -23,7 +23,8 @@ Each rule names an action:
   replied to the line that triggered the rule and the correction shapes what comes next.
 
 The broker refuses an injection while a reply is in flight, so the monitor retries every half
-second until it is accepted, with one idempotency key per flag. Each rule is raised once per
+second, with one idempotency key per flag, and gives up after twenty seconds (`deliver_attempts`
+times `deliver_interval_s`), recording the failure on the flag. Each rule is raised once per
 call. One check runs at a time; lines that arrive during a check are batched into the next
 one, so a slow check never queues up.
 
@@ -59,22 +60,24 @@ Hosted runs cannot attach a monitor, so the full-call set is `host.py`-only.
 
 ## On a phone call
 
-Reuse `examples/integrations/twilio`: build one `PolicyMonitor` per call and pass its
-`observe` as `BridgeHooks.on_event`. It opens the policy session on the first event and needs
-the live session only to inject:
+Reuse `examples/integrations/twilio`: build one `PolicyMonitor` per call, open it from
+`on_connected` (a connect must not sit in the bridge's event loop, which carries the audio),
+and pass its `observe` as `BridgeHooks.on_event`:
 
 ```python
 def call_hooks(url, api_key):
-    monitor = PolicyMonitor(url, api_key)
+    monitor, live = PolicyMonitor(url, api_key), {}
+
+    async def on_connected(session):
+        live["session"] = session
+        await monitor.start(session)
 
     async def on_event(event):
         await monitor.observe(event, live["session"])
 
-    async def on_connected(session):
-        live["session"] = session
-
-    live = {}
-    return BridgeHooks(execute_tool=..., on_connected=on_connected, on_event=on_event)
+    return monitor, BridgeHooks(execute_tool=..., on_connected=on_connected, on_event=on_event)
 ```
 
-Close the monitor when the call ends; it closes the policy session.
+Close the monitor when the call ends; it closes the policy session. If the policy session
+fails to connect or drops mid-call, the monitor marks itself dead and the call carries on
+without it; `flags` records why.

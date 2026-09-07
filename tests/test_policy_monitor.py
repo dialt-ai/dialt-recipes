@@ -3,6 +3,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from dialt_recipes.cli import collect_cases
 
@@ -55,6 +56,7 @@ def test_a_flag_is_delivered_once_with_the_rule_action() -> None:
     live = FakeLive(refuse_first=True)
     monitor._live = live
     monitor.note("caller", "I have crushing chest pain")
+    monitor._batch_end = len(monitor.lines)          # as _check records before it sends
 
     async def run():
         await monitor._raise({"rule": "emergency", "evidence": "chest pain"})
@@ -112,3 +114,91 @@ def test_full_call_cases_carry_the_workflow_and_a_policy_block() -> None:
         assert set(policy["expect"]) <= set(RULE_IDS) and set(policy["forbid"]) <= set(RULE_IDS)
         assert not set(policy["expect"]) & set(policy["forbid"])
     assert [d["policy"]["expect"] for d in documents].count([]) == 1
+
+
+class FakePolicy:
+    """A scripted policy session: events come from a queue the test feeds."""
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.sent: list[str] = []
+        self.results: list[tuple[str, dict, str]] = []
+
+    async def send_text(self, text: str) -> None:
+        self.sent.append(text)
+
+    async def send_tool_result(self, call_id, value, *, outcome, verified) -> None:
+        self.results.append((call_id, value, outcome))
+
+    async def events(self):
+        while True:
+            event = await self.queue.get()
+            if event is None:
+                return
+            yield event
+
+    async def close(self) -> None:
+        pass
+
+    def emit(self, type_: str, **data) -> None:
+        self.queue.put_nowait(SimpleNamespace(type=type_, data=data))
+
+
+def start_with_fake(monitor, policy, live):
+    monitor._policy, monitor._live = policy, live
+    monitor._tasks = [asyncio.create_task(monitor._read_policy()),
+                      asyncio.create_task(monitor._run_checks())]
+
+
+def test_checks_batch_lines_and_only_a_final_done_ends_a_check() -> None:
+    async def run():
+        monitor = POLICY.PolicyMonitor("wss://unused", "key", check_timeout_s=0.2,
+                                       deliver_interval_s=0)
+        policy, live = FakePolicy(), FakeLive()
+        start_with_fake(monitor, policy, live)
+
+        monitor.note("caller", "hello")
+        await asyncio.sleep(0)                       # the checker sends the first batch
+        monitor.note("agent", "hi")                  # arrives during the check: next batch
+        monitor.note("caller", "chest pain now")
+        policy.emit("done", turn_id="t1-bridge")     # a bridge turn does not end the check
+        await asyncio.sleep(0.05)
+        assert not monitor._idle.is_set() and policy.sent == ["caller: hello"]
+        policy.emit("tool_call", id="c1", name="raise_flag",
+                    args={"rule": "emergency", "evidence": "chest pain"})
+        policy.emit("tool_call", id="c2", name="something_else", args={})
+        policy.emit("done", turn_id="t1-final")
+        await asyncio.sleep(0.05)
+        assert policy.sent[1] == "agent: hi\ncaller: chest pain now"
+        policy.emit("done", turn_id="t2")
+        await asyncio.wait_for(monitor.settle(), 1)
+
+        assert [r[2] for r in policy.results] == ["succeeded", "failed"]
+        assert [flag["rule"] for flag in monitor.flags] == ["emergency"]
+        assert monitor.flags[0]["after_line"] == 1 and monitor.flags[0]["delivered"]
+        assert live.calls[0]["reply"] is True
+        assert monitor.checks == 2 and not monitor.dead
+
+        # A timed-out check: the late done is ignored, the next check is unaffected.
+        monitor.note("caller", "slow one")
+        await asyncio.sleep(0.3)
+        assert monitor.flags[-1]["error"] == "check timed out"
+        monitor.note("caller", "after the slow one")
+        await asyncio.sleep(0.05)
+        policy.emit("done", turn_id="t3-late")       # belongs to the timed-out check
+        await asyncio.sleep(0.05)
+        assert not monitor._idle.is_set()
+        policy.emit("done", turn_id="t4")
+        await asyncio.wait_for(monitor.settle(), 1)
+        assert monitor.checks == 4
+
+        # The policy session ends: the monitor is dead, settle returns, lines are kept.
+        policy.queue.put_nowait(None)
+        await asyncio.sleep(0.05)
+        assert monitor.dead and monitor.flags[-1]["error"] == "policy session ended"
+        monitor.note("caller", "still talking")
+        await asyncio.wait_for(monitor.settle(), 1)
+        assert monitor.checks == 4 and monitor.lines[-1] == "caller: still talking"
+        await monitor.close()
+
+    asyncio.run(run())

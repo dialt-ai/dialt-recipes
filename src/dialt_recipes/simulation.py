@@ -271,7 +271,7 @@ async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[st
     return value, "succeeded", True
 
 
-Observer = Callable[["SessionEvent", DialtSession], Awaitable[None]]
+Observer = Callable[[SessionEvent, DialtSession], Awaitable[None]]
 
 
 async def run_simulation(url: str, api_key: str, case: SimulationCase, *,

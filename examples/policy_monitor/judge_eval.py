@@ -8,8 +8,9 @@ applies. Lines are fed one at a time and the monitor settles after each, so the 
 which rule fired and how many lines after the evidence it came. The live session is a stub
 that accepts every injection; nothing is steered here, only judged.
 
-Reports per case, then precision, recall and mean lateness over the set. Exits 1 on any miss
-or false positive.
+Reports per case, then precision, recall and mean lateness over the set. A flag raised before
+its evidence line is a false positive, not an early hit. Exits 1 on any miss, false positive or
+monitor error.
 """
 from __future__ import annotations
 
@@ -29,13 +30,9 @@ RULE_IDS = {rule.id for rule in CLINIC_RULES}
 
 
 class AcceptingLive:
-    """Stands in for the live session: records what would have been injected."""
-
-    def __init__(self) -> None:
-        self.injected: list[dict] = []
+    """Stands in for the live session: accepts every injection, steers nothing."""
 
     async def inject_context(self, text, *, role, reply, message_id):
-        self.injected.append({"text": text, "reply": reply})
         return {"accepted": True}
 
 
@@ -56,18 +53,22 @@ def load(paths: list[Path]) -> list[tuple[Path, dict]]:
 
 async def score(document: dict, url: str, api_key: str) -> dict:
     monitor = PolicyMonitor(url, api_key)
-    live = AcceptingLive()
-    await monitor.start(live)
+    await monitor.start(AcceptingLive())
     try:
         for who, text in document["transcript"]:
             monitor.note(who, text)
-            await asyncio.wait_for(monitor.settle(), timeout=monitor.check_timeout_s + 5)
+            try:
+                await asyncio.wait_for(monitor.settle(), timeout=monitor.check_timeout_s + 5)
+            except TimeoutError:
+                monitor.flags.append({"rule": None, "error": "settle timed out"})
+                break
     finally:
         await monitor.close()
     fired = [flag for flag in monitor.flags if flag.get("rule")]
     expect = document.get("expect")
-    hit = next((flag for flag in fired if expect and flag["rule"] == expect["rule"]), None)
-    false_positives = [flag["rule"] for flag in fired if not (expect and flag["rule"] == expect["rule"])]
+    hit = next((flag for flag in fired if expect and flag["rule"] == expect["rule"]
+                and flag["after_line"] >= expect["line"]), None)
+    false_positives = [flag["rule"] for flag in fired if flag is not hit]
     return {
         "case": document["name"],
         "expected": expect["rule"] if expect else None,
