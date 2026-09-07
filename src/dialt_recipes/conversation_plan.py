@@ -26,7 +26,7 @@ class ConversationPlan:
     fields: tuple[PlanField, ...]
     completion: str
     tool_name: str = "record_plan_field"
-    record_as_you_go: bool = True
+    record_as_you_go: bool = False
 
     def __post_init__(self) -> None:
         if not self.name.strip() or not self.objective.strip() or not self.completion.strip():
@@ -48,7 +48,7 @@ class ConversationPlan:
             ) for item in value["fields"]),
             completion=str(value["completion"]),
             tool_name=str(value.get("tool_name", "record_plan_field")),
-            record_as_you_go=value.get("record_as_you_go", True),
+            record_as_you_go=value.get("record_as_you_go", False),
         )
 
     def instructions(self) -> str:

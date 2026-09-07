@@ -5,12 +5,13 @@ from dialt import SessionEvent
 from dialt_recipes import ConversationPlan, GuidedAssistant, PlanField
 
 
-def plan():
+def plan(*, record_as_you_go=False):
     return ConversationPlan(
         name="a research interview", objective="Understand one recent incident.",
         fields=(PlanField("incident", "A specific event."),
                 PlanField("impact", "Its observable consequence.")),
         completion="Reflect the account back and ask for corrections.",
+        record_as_you_go=record_as_you_go,
     )
 
 
@@ -39,7 +40,7 @@ def test_guided_controller_resolves_record_tool_with_verified_state():
 
     async def run():
         session = FakeSession()
-        assistant = GuidedAssistant(session=session, plan=plan(), modality="text")
+        assistant = GuidedAssistant(session=session, plan=plan(record_as_you_go=True), modality="text")
         assert [event.type async for event in assistant.events()] == ["tool_call"]
         return assistant, session
 
@@ -55,7 +56,7 @@ def test_recording_can_be_disabled_without_losing_evidence_instructions():
     assert current.tool_name not in current.instructions()
     assert 'clarify' in current.instructions().lower()
     assert 'incident (required)' in current.instructions()
-    assert plan().tools() == [plan().tool()]
+    assert plan(record_as_you_go=True).tools() == [plan().tool()]
 
 
 def test_complete_snapshot_rejects_missing_blank_and_unknown_details():
@@ -74,3 +75,18 @@ def test_plan_rejects_string_boolean():
     import pytest
     with pytest.raises(ValueError, match='boolean'):
         replace(plan(), record_as_you_go='false')
+
+
+def test_omitted_recording_setting_defaults_off_in_python_and_json():
+    from dataclasses import asdict
+    current = plan()
+    document = asdict(current)
+    document.pop('record_as_you_go')
+    direct = ConversationPlan(name=current.name, objective=current.objective,
+                              fields=current.fields, completion=current.completion)
+    assert direct.tools() == []
+    loaded = ConversationPlan.from_dict(document)
+    assert current.record_as_you_go is False
+    assert loaded.tools() == []
+    document['record_as_you_go'] = True
+    assert ConversationPlan.from_dict(document).tools() == [current.tool()]
