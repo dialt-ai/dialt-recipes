@@ -24,7 +24,7 @@ class GuidedAssistant:
         session = await DialtSession.connect(
             url, api_key=api_key, session_id=session_id,
             mode=DialtMode(
-                modality=modality, instructions=plan.instructions(), tools=[plan.tool()],
+                modality=modality, instructions=plan.instructions(), tools=plan.tools(),
                 greeting=greeting,
             ),
         )
@@ -37,7 +37,7 @@ class GuidedAssistant:
 
     async def events(self) -> AsyncIterator[SessionEvent]:
         async for event in self.session.events():
-            if event.type == "tool_call" and event.data.get("name") == self.plan.tool_name:
+            if self.plan.record_as_you_go and event.type == "tool_call" and event.data.get("name") == self.plan.tool_name:
                 try:
                     result = self.plan.record(self.answers, event.data.get("args") or {})
                 except ValueError as exc:
@@ -50,6 +50,7 @@ class GuidedAssistant:
 
     @property
     def complete(self) -> bool:
+        """Structured-state completeness; remains false when per-answer recording is off."""
         return all(not item.required or item.key in self.answers for item in self.plan.fields)
 
     async def close(self) -> None:

@@ -13,3 +13,17 @@ uv run dialt-guided examples/guided_customer_research/plan.json
 
 For the browser example, serve the repository, open this directory, and enter a short-lived scoped
 session credential. Voice opens the microphone; text uses `sendText()` and no media pipeline.
+
+## Optional live recording
+
+The browser has a **Record answers as you go** checkbox. It defaults to the plan's
+`record_as_you_go` setting (true when omitted). Each recorded answer adds a tool/result model
+round and increases response latency.
+
+Set `"record_as_you_go": false` in a JSON plan, or pass `record_as_you_go=False` to
+`ConversationPlan`, to omit the recording tool and keep the conversation natural. The model
+still collects and clarifies the required evidence. Structured `answers` stays empty and
+`GuidedAssistant.complete` stays false because it describes recorded state, not model-inferred
+conversation completion. Details remain in the transcript for later extraction; no extractor
+is run automatically. A completion action can instead collect them once, as shown in the
+qualification-handoff recipe.

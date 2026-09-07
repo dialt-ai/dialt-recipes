@@ -22,7 +22,6 @@ async def main() -> None:
     case = replace(
         case,
         fixtures={
-            "record_qualification": state.record,
             "start_handoff": state.start_handoff,
         },
         checks=tuple(
