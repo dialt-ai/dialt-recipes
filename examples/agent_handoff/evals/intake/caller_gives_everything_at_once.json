@@ -68,7 +68,7 @@
     },
     {
       "type": "judge",
-      "criterion": "The assistant took the details the caller gave in one breath, read them back, and handed off, without answering the payment question itself or asking for the details again."
+      "criterion": "The assistant took the details the caller gave in one breath, read them back, and handed off, without answering the payment question itself or asking for the details again. Judge only the conversation up to and including the hand-off; what happens after it is outside this case."
     }
   ],
   "limits": {
