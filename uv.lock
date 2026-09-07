@@ -347,7 +347,7 @@ wheels = [
 
 [[package]]
 name = "dialt-recipes"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "dialt-sdk" },
@@ -366,7 +366,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dialt-sdk", specifier = ">=0.20.1" },
+    { name = "dialt-sdk", specifier = ">=0.23.0" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -379,16 +379,16 @@ dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "dialt-sdk"
-version = "0.20.1"
+version = "0.23.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b2/09/504cc83de70c704361825884d5b1e5bb8739a4fa44d67bde4db55c847159/dialt_sdk-0.20.1.tar.gz", hash = "sha256:6490e2fee05d9b71f6ad941a4aa44ce179519f04507b686d7e357507b3c3abbd", size = 43032, upload-time = "2026-09-04T15:39:14.556Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/c2/02afb53e872402329338b6545dcf2945ef5310c931ef430b7dc36a8a7464/dialt_sdk-0.23.0.tar.gz", hash = "sha256:daeddb74cd1bc0cc3100793faa791aa2547f2fbc53d396a37ecfcd4437292025", size = 46549, upload-time = "2026-09-07T14:04:31.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/45/e5c1a4606aaddeafa53ea9fa9acda4e0fcc5cd72345165b617691ade80b7/dialt_sdk-0.20.1-py3-none-any.whl", hash = "sha256:d6c6515bf5fdf4e21a859970fd7115da8b0e7b99192361452341b450a038e74a", size = 36536, upload-time = "2026-09-04T15:39:13.718Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/b1/49f28f5bfd162f71590e44fc5c10d61545ff6756bfac3abe34c803bc5a32/dialt_sdk-0.23.0-py3-none-any.whl", hash = "sha256:7a3d59aae7f82e362f22947dfd994cfd608922e011bb0a2282f5cb846a16660b", size = 38525, upload-time = "2026-09-07T14:04:30.686Z" },
 ]
 
 [[package]]
