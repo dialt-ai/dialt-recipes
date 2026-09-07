@@ -33,6 +33,14 @@ cp .env.example .env
 
 [`examples/qualification_handoff`](examples/qualification_handoff) collects configurable qualification fields, handles corrections, obtains explicit consent, and calls a customer-owned specialist handoff. It includes text and voice eval cases plus Python callback seams, and reuses the maintained Twilio bridge for live calls.
 
+## Agent hand-off on one call
+
+[`examples/agent_handoff`](examples/agent_handoff) puts two agent personas on one call: an
+obviously synthetic intake voice takes the caller's details, calls a hand-off tool, and the host
+switches the session voice and returns the handover note as the tool result. The specialist
+continues the same session with intake's context intact. Text and voice eval cases, a local host
+that confirms the switch from the session's `voice` event, and the Twilio wiring.
+
 ## Guided customer-research assistant
 
 [`examples/guided_customer_research`](examples/guided_customer_research) is a non-trivial guided

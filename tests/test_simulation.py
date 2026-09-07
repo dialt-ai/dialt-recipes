@@ -220,6 +220,12 @@ def test_fixtures_answer_like_hosted_runs():
         callback = await _fixture_result({"lookup": lambda args: {"slot": args["wanted"]}},
                                          "lookup", {"wanted": "4:00"})
         missing = await _fixture_result({}, "delete", {})
+
+        async def switch(args, session):      # a tool that acts on the call it came from
+            return {"voice": session, "to": args["voice"]}
+
+        aware = await _fixture_result({"switch": switch}, "switch", {"voice": "warm"}, None,
+                                      session="live-target")
         state = {}
         store = {"fixture_type": "field_store", "field_arg": "field", "value_arg": "value",
                  "fields": [{"key": "name"}, {"key": "phone", "required": False}]}
@@ -227,11 +233,12 @@ def test_fixtures_answer_like_hosted_runs():
                                          {"field": "name", "value": " Maya "}, state)
         rejected = await _fixture_result({"intake": store}, "intake",
                                          {"field": "age", "value": "40"}, state)
-        return fixed, callback, missing, recorded, rejected, state
+        return fixed, callback, missing, aware, recorded, rejected, state
 
-    fixed, callback, missing, recorded, rejected, state = asyncio.run(run())
+    fixed, callback, missing, aware, recorded, rejected, state = asyncio.run(run())
     assert fixed == ({"slot": "3:30"}, "succeeded", True)
     assert callback == ({"slot": "4:00"}, "succeeded", True)
+    assert aware == ({"voice": "live-target", "to": "warm"}, "succeeded", True)
     assert missing[0]["error"] == "unhandled_tool" and missing[1:] == ("failed", False)
     assert recorded == ({"recorded": "name", "missing_required": [], "complete": True},
                         "succeeded", True)

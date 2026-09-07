@@ -215,12 +215,25 @@ def session_mode(config: dict[str, Any], modality: str, *, simulator: bool = Fal
     return replace(DialtMode.from_wire(config, modality=modality), **overrides)
 
 
+def _wants_session(fixture: Callable[..., Any]) -> bool:
+    try:
+        return "session" in inspect.signature(fixture).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[str, Any],
-                          state: dict[str, dict[str, str]] | None = None) -> tuple[Any, str, bool]:
+                          state: dict[str, dict[str, str]] | None = None,
+                          session: DialtSession | None = None) -> tuple[Any, str, bool]:
     """Answer a target tool call: a Python callable, a field_store, or a fixed value.
 
     An undeclared tool fails closed, exactly as hosted runs do, so a local pass means the
     hosted run will not be answering tools the case forgot to declare.
+
+    A callable that declares a `session` parameter receives the live target session, so the
+    tool can act on the call it was called from (switch the voice, inject context, restrict
+    tools), as a real host does. Hosted runs answer the same tool with the case's fixed
+    result; the session-side effect is the host's, and only a local run exercises it.
     """
     if name not in fixtures:
         return ({"error": "unhandled_tool", "tool": name,
@@ -229,7 +242,7 @@ async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[st
     value = fixtures[name]
     if callable(value):
         try:
-            value = value(args)
+            value = value(args, session=session) if _wants_session(value) else value(args)
             if inspect.isawaitable(value):
                 value = await value
         except Exception as exc:  # noqa: BLE001 - an application rejection is a tool failure
@@ -389,7 +402,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                     tool_name = str(event.data.get("name") or "")
                     value, outcome, verified = await _fixture_result(
                         case.fixtures, tool_name, event.data.get("args") or {},
-                        report.fixture_state,
+                        report.fixture_state, session=source,
                     )
                     await source.send_tool_result(call_id, value, outcome=outcome, verified=verified)
                     fixture = case.fixtures.get(tool_name)
