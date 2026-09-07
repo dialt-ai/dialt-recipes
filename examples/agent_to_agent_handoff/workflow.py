@@ -34,7 +34,7 @@ INTAKE_PLAN = ConversationPlan(
                "when they gave everything at once. The specialist is the next step of this "
                "same call, so no permission to transfer is needed. Never say the specialist "
                "has the call until the tool result confirms it.",
-    tool_name="record_intake", record_as_you_go=False,
+    record_as_you_go=False,
 )
 
 SPECIALIST_ROLE = (
@@ -64,8 +64,8 @@ def instructions() -> str:
 def intake_tools() -> list[dict[str, Any]]:
     """The phase boundary as a tool contract: intake declares only the hand-off, so however the
     caller front-loads their details it cannot act as the specialist early. The host swaps in
-    the full manifest when the hand-off lands. Hosted and CLI runs cannot swap, so the cases
-    declare every tool and rely on the instructions alone; host.py and a real host start here."""
+    the full manifest when the hand-off lands. The intake cases start exactly like this; the
+    full-call cases declare every tool for host.py, which starts here and swaps."""
     return [tool for tool in tool_manifest() if tool["name"] == "handoff_to_agent"]
 
 

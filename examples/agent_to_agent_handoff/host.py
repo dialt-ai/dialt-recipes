@@ -5,9 +5,9 @@ session's own `voice` event.
 
     uv run python -u examples/agent_to_agent_handoff/host.py [CASE_OR_DIR ...]
 
-Defaults to `evals/full_call`. `DIALT_MODALITY` selects text or voice (default voice: the
-broker applies `set_tools` and `set_voice` on the voice path today, and this run is the check
-that the swap actually happened).
+Defaults to `evals/full_call`. `DIALT_MODALITY` selects voice (default) or text; the broker
+applies `set_tools` and `set_voice` on both paths, and this run is the check that the swap
+actually happened.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from dialt_recipes import SimulationReport, run_simulation
-from dialt_recipes.cli import collect_cases
+from dialt_recipes.cli import _credentials, collect_cases
 
 from workflow import HandoffState, intake_tools
 
@@ -50,7 +50,8 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
          "pass": state.handed_off, "detail": "" if state.handed_off else "no handoff"},
         {"type": "application_state", "name": f"session voice switched to {state.specialist_voice}",
          "pass": switched,
-         "detail": "" if switched else "no voice event confirmed the switch (is the key on the roster?)"},
+         "detail": "" if switched else ("no voice event confirmed the switch: is the key on the "
+                                        "roster, and different from the intake voice?")},
     ] if expects_handoff else []
     passed = report.passed and all(check["pass"] for check in application_checks)
     return passed, {
@@ -66,8 +67,7 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
 
 async def main(paths: list[Path]) -> int:
     load_dotenv()
-    url = os.environ.get("DIALT_URL", "wss://dialt.com/ws")
-    api_key = os.environ["DIALT_API_KEY"]
+    url, api_key = _credentials()
     modality = os.environ.get("DIALT_MODALITY", "voice")
     failed = 0
     for case in collect_cases(paths):

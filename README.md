@@ -36,12 +36,12 @@ cp .env.example .env
 ## Agent-to-agent hand-off on one call
 
 [`examples/agent_to_agent_handoff`](examples/agent_to_agent_handoff) puts two agent personas on
-one call: an obviously synthetic intake voice takes the caller's details, calls a hand-off tool,
-and the host declares the specialist's tools, switches the session voice and returns the handover
-note as the tool result. The specialist continues the same session with intake's context intact.
-A clinic appointment line is the worked example. Text and voice eval cases rendered from the
-workflow, a local host that confirms the switch from the session's `voice` event, and the Twilio
-wiring.
+one call: an obviously synthetic intake voice takes the patient's details, calls a hand-off
+tool, and the host declares the specialist's tools, switches the session voice and returns the
+handover note as the tool result. The specialist continues the same session with intake's
+context intact. A clinic appointment line is the worked example. Eval cases rendered from the
+workflow, a local host that confirms the switch from the session's `voice` event, and a Twilio
+wiring sketch.
 
 ## Guided customer-research assistant
 

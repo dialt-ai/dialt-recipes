@@ -73,7 +73,7 @@ def test_both_roles_are_declared_up_front() -> None:
 def test_intake_can_only_hand_off() -> None:
     """The phase boundary is a tool contract the host enforces, not a prompt rule alone."""
     assert [tool["name"] for tool in WORKFLOW.intake_tools()] == ["handoff_to_agent"]
-    assert WORKFLOW.intake_tools()[0] == WORKFLOW.tool_manifest()[0]
+    assert "caller_confirmed" in WORKFLOW.intake_tools()[0]["parameters"]["required"]
 
 
 def test_handoff_validates_before_anything_changes_on_the_call() -> None:
@@ -129,4 +129,6 @@ def test_voices_come_from_the_environment(monkeypatch) -> None:
 def test_fixed_handoff_result_matches_the_live_shape() -> None:
     document = json.loads((EVALS / "full_call" / "intake_then_specialist.json").read_text())
     fixed = document["fixtures"]["handoff_to_agent"]["result"]
-    assert fixed["handoff_complete"] is True and "note" in fixed
+    live = HandoffState().handoff({"summary": "Appointment query.", "details": DETAILS,
+                                   "caller_confirmed": True})
+    assert set(fixed) == set(live) and fixed["handoff_complete"] is live["handoff_complete"]

@@ -50,10 +50,11 @@ you connected with the right folks" on a live call.
 Both sets are rendered from `workflow.py` by `render_cases.py`, so the cases always carry the
 prompt and tools the recipe runs; re-render after editing either.
 
-`evals/intake/` declares only the hand-off tool, exactly as a real host starts the call, and the
-simulated caller hangs up once they hear they are being passed on. These are honest runs of the
-intake persona, hosted or local, with judge criteria for the readback, a corrected date of
-birth, and a caller who asks for a person:
+`evals/intake/` declares only the hand-off tool, exactly as a real host starts the call. The
+fixed hand-off result tells the assistant to confirm the hand-off and end the call, so the judge
+sees a complete intake and nothing else. These are honest runs of the intake persona, hosted or
+local, with judge criteria for the read-back, a corrected date of birth, and a caller who asks
+for a person:
 
 ```sh
 uv sync --frozen
@@ -70,8 +71,8 @@ uv run python -u examples/agent_to_agent_handoff/host.py                # voice,
 DIALT_MODALITY=text uv run python -u examples/agent_to_agent_handoff/host.py
 ```
 
-Hosted runs and `dialt-sim` cannot swap a manifest mid-call, so a full-call case run through
-either exercises the instructions alone, and the model may skip the hand-off.
+The full-call cases are `host.py`-only by construction: hosted runs and `dialt-sim` cannot swap
+a manifest mid-call, and their fixed hand-off result ends the call at the hand-off.
 
 Two things the runs showed, kept here because they shape the design. With every tool declared
 from the start, the model answered as the specialist without handing off in two of three runs.
@@ -81,23 +82,25 @@ record. Both are why the specialist's tools arrive with the hand-off and never b
 
 ## On a phone call
 
-Reuse `examples/integrations/twilio`. Keep the session from `on_connected`, and route
-`handoff_to_agent` to `HandoffState.handoff_on(session, args)`:
+Reuse `examples/integrations/twilio`. Build the state and hooks per call, keep the session from
+`on_connected`, and route `handoff_to_agent` to `HandoffState.handoff_on(session, args)`:
 
 ```python
-state, live = HandoffState(), {}
+def call_hooks():
+    """One HandoffState and one live session per call; never share them across calls."""
+    state, live = HandoffState(), {}
 
-async def on_connected(session):
-    live["session"] = session
+    async def on_connected(session):
+        live["session"] = session
 
-async def execute_tool(name, args):
-    if name == "handoff_to_agent":
-        return await state.handoff_on(live["session"], args)
-    ...
+    async def execute_tool(name, args):
+        if name == "handoff_to_agent":
+            return await state.handoff_on(live["session"], args)
+        ...
 
-mode = DialtMode(voice=state.intake_voice, instructions=instructions(), tools=intake_tools(),
-                 greeting=GREETING)
-hooks = BridgeHooks(execute_tool=execute_tool, on_connected=on_connected)
+    mode = DialtMode(voice=state.intake_voice, instructions=instructions(),
+                     tools=intake_tools(), greeting=GREETING)
+    return mode, BridgeHooks(execute_tool=execute_tool, on_connected=on_connected)
 ```
 
 Because the switch happens inside the Dialt session, Twilio sees one uninterrupted media stream:
