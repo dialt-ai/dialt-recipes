@@ -5,7 +5,7 @@ import inspect
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable
 
 import httpx
@@ -54,25 +54,41 @@ MAX_FIXTURE_FIELD_VALUE_CHARS = 20_000
 @dataclass(frozen=True)
 class SimulationCase:
     name: str
-    starter: str
-    target_instructions: str
-    simulator_instructions: str
-    target_tools: tuple[dict[str, Any], ...] = ()
-    target_options: dict[str, Any] = field(default_factory=dict)   # voice, web_search, end_call
+    starter: str                 # "" when target.greeting opens the conversation
+    # Session mode documents, exactly as a start frame carries them (DialtMode.to_wire), so
+    # every session option is a case option. The run owns a few fields: see session_mode.
+    target: dict[str, Any] = field(default_factory=dict)
+    simulator: dict[str, Any] = field(default_factory=dict)
     fixtures: dict[str, Fixture] = field(default_factory=dict)
     checks: tuple[dict[str, Any], ...] = ()
     max_turns: int = 20
     timeout_s: float = 600.0
     silence_s: float = 30.0
 
+    @property
+    def target_instructions(self) -> str:
+        return str(self.target.get("instructions") or "")
+
+    @property
+    def target_tools(self) -> tuple[dict[str, Any], ...]:
+        return tuple(self.target.get("tools") or ())
+
+    @property
+    def simulator_instructions(self) -> str:
+        return str(self.simulator.get("instructions") or "")
+
     @classmethod
     def from_dict(cls, value: dict[str, Any], *, modality: str | None = None) -> "SimulationCase":
         """Build a case from the hosted case document.
 
-        ``name``, ``starter``, ``target`` (``instructions``, optional ``tools``, ``voice``,
-        ``web_search``, ``end_call``), ``simulator`` (``instructions``), ``fixtures``,
-        ``checks`` and ``limits`` (``max_turns``, ``timeout_s``, ``silence_s``).
+        ``name``, ``starter``, ``target`` and ``simulator`` (each a session mode document:
+        ``instructions``, ``greeting``, ``tools``, ``voice``, ``web_search``, ``end_call`` and
+        every other session option), ``fixtures``, ``checks`` and ``limits`` (``max_turns``,
+        ``timeout_s``, ``silence_s``). Validation is the SDK's ``validate_case``: the hosted
+        rules and messages.
 
+        A case opens with exactly one of ``starter`` (the simulated user speaks first) and
+        ``target.greeting`` (the target opens, as a deployed agent with a fixed greeting does).
         ``target.end_call`` (default true) gives the agent the managed ``end_call`` tool, the
         only way it can end the conversation. The simulated user always has it.
         """
@@ -82,20 +98,14 @@ class SimulationCase:
                 f"{', '.join(stale)}: cases use the hosted shape (target.instructions, "
                 "target.tools, simulator.instructions, checks, limits); see the evals guide")
         value = validate_case(value, modality=modality)   # the hosted rules and messages
-        target = value.get("target") or {}
-        simulator = value.get("simulator") or {}
         limits = value["limits"]
-        checks = tuple(value["checks"])
         return cls(
             name=str(value["name"]),
             starter=str(value["starter"]),
-            target_instructions=str(target.get("instructions") or ""),
-            simulator_instructions=str(simulator.get("instructions") or ""),
-            target_tools=tuple(target.get("tools") or ()),
-            target_options={key: target[key] for key in ("voice", "web_search", "end_call")
-                            if key in target},
+            target=dict(value.get("target") or {}),
+            simulator=dict(value.get("simulator") or {}),
             fixtures=dict(value.get("fixtures") or {}),
-            checks=checks,
+            checks=tuple(value["checks"]),
             max_turns=int(limits["max_turns"]),
             timeout_s=float(limits["timeout_s"]),
             silence_s=float(limits["silence_s"]),
@@ -183,13 +193,26 @@ def evaluate_checks(case: SimulationCase, report: SimulationReport) -> list[dict
     return results
 
 
-def target_end_call(options: dict) -> dict:
-    """DialtMode kwargs for `target.end_call`: true or false, or {"when": "<condition>"}, which
-    keeps the tool and states the condition, the same three forms the hosted evals accept."""
-    value = options.get("end_call", True)
-    if isinstance(value, dict):
-        return {"end_call": True, "end_call_when": value["when"]}
-    return {"end_call": bool(value)}
+def session_mode(config: dict[str, Any], modality: str, *, simulator: bool = False,
+                 greeting: str | bool = False) -> DialtMode:
+    """The case's mode document, passed through as a start frame carries it. The run owns four
+    things, as the hosted runner does: the simulated user has no tools and always has end_call,
+    so it can hang up when its instructions say to (reported as simulator_ended); the target has
+    end_call unless the case says otherwise; who opens (greeting); and, in voice, the silence
+    policy when the case is silent on it, so the watchdog rather than the production
+    nudge/sign-off ends a quiet call."""
+    overrides: dict[str, Any] = {"greeting": greeting}
+    if simulator:
+        overrides.update(tools=None, tool_choice=None, web_search=False,
+                         end_call=True, end_call_when=None)
+    elif "end_call" not in config:
+        overrides["end_call"] = True
+    if modality == "voice":
+        for key, default in (("silence_nudge_s", SIMULATION_SILENCE_NUDGE_S),
+                             ("silence_end_s", SIMULATION_SILENCE_END_S)):
+            if config.get(key) is None:
+                overrides[key] = default
+    return replace(DialtMode.from_wire(config, modality=modality), **overrides)
 
 
 async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[str, Any],
@@ -248,30 +271,18 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         raise ValueError("modality must be text or voice")
     suffix = uuid.uuid4().hex[:10]
     target_id, simulator_id = f"recipe-target-{suffix}", f"recipe-user-{suffix}"
+    # Whoever has the opener speaks first: the target with target.greeting, otherwise the
+    # simulated user with the starter. The other side opens silent.
     target = await DialtSession.connect(
         url, api_key=api_key, session_id=target_id,
-        mode=DialtMode(
-            modality=modality, instructions=case.target_instructions,
-            tools=list(case.target_tools) or None, greeting=False,
-            voice=case.target_options.get("voice"),
-            web_search=bool(case.target_options.get("web_search", False)),
-            **target_end_call(case.target_options),
-            silence_nudge_s=SIMULATION_SILENCE_NUDGE_S if modality == "voice" else None,
-            silence_end_s=SIMULATION_SILENCE_END_S if modality == "voice" else None,
-        ),
+        mode=session_mode(case.target, modality,
+                          greeting=str(case.target.get("greeting") or "").strip() or False),
     )
     try:
-        # The simulated user always has end_call, so it can hang up when its instructions say
-        # the conversation is over (reported as simulator_ended).
         simulator = await DialtSession.connect(
             url, api_key=api_key, session_id=simulator_id,
-            mode=DialtMode(
-                modality=modality, instructions=case.simulator_instructions,
-                tools=None, end_call=True,
-                greeting=case.starter if modality == "voice" else False,
-                silence_nudge_s=SIMULATION_SILENCE_NUDGE_S if modality == "voice" else None,
-                silence_end_s=SIMULATION_SILENCE_END_S if modality == "voice" else None,
-            ),
+            mode=session_mode(case.simulator, modality, simulator=True,
+                              greeting=case.starter if modality == "voice" and case.starter else False),
         )
     except Exception:
         await target.close()
@@ -434,7 +445,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         asyncio.create_task(watchdog()),
     ]
     try:
-        if modality == "text":
+        if modality == "text" and case.starter:
             await target.send_text(case.starter)
         for mic in voice_relays.values():
             mic.start()          # both lines are live from the first moment, before anyone speaks

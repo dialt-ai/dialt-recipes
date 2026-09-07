@@ -35,7 +35,7 @@ def test_all_qualification_handoff_cases_use_the_hosted_shape() -> None:
             "start_handoff",
         ]
         assert "requires_permission" not in case.target_tools[0]
-        assert case.target_options.get("end_call") is False
+        assert case.target.get("end_call") is False
         assert "record_qualification" not in case.fixtures
         assert "qualification" in case.target_tools[0]["parameters"]["required"]
 
