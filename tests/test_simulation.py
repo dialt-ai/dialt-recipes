@@ -34,8 +34,8 @@ def test_case_uses_the_hosted_document_shape():
         SimulationCase.from_dict({"name": "bad", "starter": "hi", "checks": [{"type": "contains"}]})
     with pytest.raises(ValueError, match="starter must contain"):
         SimulationCase.from_dict({"name": "no starter"})
-    assert case.target_options["end_call"] is True
-    assert "end_call" not in SimulationCase.from_dict({"name": "n", "starter": "hi"}).target_options
+    assert case.target["end_call"] is True
+    assert "end_call" not in SimulationCase.from_dict({"name": "n", "starter": "hi"}).target
     with pytest.raises(ValueError, match="target.end_call must be true, false"):
         SimulationCase.from_dict({"name": "n", "starter": "hi", "target": {"end_call": "no"}})
 
@@ -311,13 +311,31 @@ def test_dialt_sim_checks_voice_starters_before_running(tmp_path):
         collect_cases([tmp_path], "voice")
 
 
-def test_target_end_call_keeps_the_stated_condition() -> None:
-    from dialt_recipes.simulation import target_end_call
+def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> None:
+    """Every session option in the case reaches the session; the run only overrides who opens,
+    the simulator's tools and end_call, and the voice silence policy when the case is silent."""
+    from dialt.relay import SIMULATION_SILENCE_END_S, SIMULATION_SILENCE_NUDGE_S
+    from dialt_recipes.simulation import session_mode
 
-    assert target_end_call({}) == {"end_call": True}
-    assert target_end_call({"end_call": False}) == {"end_call": False}
-    assert target_end_call({"end_call": {"when": "the caller says goodbye"}}) == {
-        "end_call": True, "end_call_when": "the caller says goodbye"}
+    assert session_mode({}, "text").end_call is True
+    assert session_mode({"end_call": False}, "text").end_call is False
+    conditioned = session_mode({"end_call": {"when": "the caller says goodbye"}}, "text")
+    assert conditioned.end_call is True and conditioned.end_call_when == "the caller says goodbye"
+    tuned = session_mode({"turn_end_threshold": 0.2, "silence_nudge_s": 8, "silence_end_s": 20,
+                          "tools": [{"name": "book"}], "tool_choice": {"tool": "book"}}, "voice")
+    assert tuned.turn_end_threshold == 0.2 and (tuned.silence_nudge_s, tuned.silence_end_s) == (8, 20)
+    assert tuned.tool_choice == {"tool": "book"} and tuned.greeting is False
+    default = session_mode({}, "voice")
+    assert (default.silence_nudge_s, default.silence_end_s) == (
+        SIMULATION_SILENCE_NUDGE_S, SIMULATION_SILENCE_END_S)
+    caller = session_mode({"instructions": "Act like a caller", "voice": "ember"}, "voice",
+                          simulator=True, greeting="Hello?")
+    assert caller.voice == "ember" and caller.tools is None and caller.end_call is True
+    assert caller.greeting == "Hello?"
+    with pytest.raises(ValueError, match="unexpected field: persona"):
+        session_mode({"persona": "x"}, "text")
+    with pytest.raises(ValueError, match="simulator.tools is set by the run"):
+        SimulationCase.from_dict({"name": "n", "starter": "hi", "simulator": {"tools": []}})
 
 
 def test_callable_fixture_rejection_is_a_failed_tool_result() -> None:
@@ -361,7 +379,7 @@ def test_target_greeting_opens_the_conversation_and_nothing_is_sent_first(monkey
     monkeypatch.setattr("dialt_recipes.simulation.VoiceTurnRelay", RelayStub)
     case = SimulationCase.from_dict({
         "name": "n", "target": {"greeting": "Hi, how old are you?"}, "limits": {"timeout_s": 10}})
-    assert case.starter == "" and case.target_greeting == "Hi, how old are you?"
+    assert case.starter == "" and case.target["greeting"] == "Hi, how old are you?"
     report = asyncio.run(run_simulation("ws://test", "key", case, modality=modality))
 
     assert report.termination_reason == "timeout"
