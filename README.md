@@ -36,7 +36,7 @@ cp .env.example .env
 ## Guided customer-research assistant
 
 [`examples/guided_customer_research`](examples/guided_customer_research) is a non-trivial guided
-interview. A `ConversationPlan` declares the evidence to collect; a normal client tool records
+interview. A `ConversationPlan` declares the evidence to collect; an optional client tool records
 answers. The model still handles wording, clarification, corrections, order and transitions
 naturally.
 
@@ -46,7 +46,7 @@ Run the terminal version in text mode:
 uv run dialt-guided examples/guided_customer_research/plan.json
 ```
 
-The browser example supports text and voice with the same plan and shows collected evidence live.
+The browser example supports text and voice with the same plan. Recording is off by default; enable it to show structured evidence live.
 Serve the repository directory, open the example, and paste a short-lived scoped session key (not
 a persistent `ck_` key).
 

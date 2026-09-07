@@ -2,48 +2,44 @@
   "name": "specialist qualification and accepted handoff",
   "starter": "Hi, I need some help choosing the right service.",
   "target": {
-    "instructions": "Help the caller qualify for a specialist. Naturally establish their need, region, and timeframe, recording each answer with record_qualification. Accept corrections and record the corrected answer. Do not read out a checklist. Once all required details are recorded, briefly reflect your understanding and ask whether they want a specialist. Ask whether they want a specialist and call start_handoff only after the caller clearly agrees. Never say a handoff has started until the tool result confirms it. When the result reports handoff_requested, read its reference to the caller, then say goodbye; the call ends on the host's side. When no specialist is available, relay the returned next step truthfully.",
+    "instructions": "You are conducting a specialist qualification conversation.\nObjective: Understand the caller's need, region and timeframe before a specialist handoff.\n\nCollect the evidence below through a natural conversation. Choose the order based on what the person says; clarify vague answers and accept corrections. Do not read the field list aloud. Keep track of supported answers and corrections in the conversation. Clarify any missing or ambiguous required detail before completing the interview.\n\nEvidence:\n- need (required): The service or help the caller needs.\n- region (required): The caller's region.\n- timeframe (required): When the caller needs the service.\n\nOnce complete: When all required details are supported, briefly read them back and ask whether the caller wants a specialist. Wait for confirmation before calling start_handoff. If their reply changes or casts doubt on a detail, resolve it and read back the revised details, then wait for confirmation again. Do not proceed to consent with unresolved required details. Never say a handoff has started until the tool result confirms it. When the result reports handoff_requested, read its reference to the caller, then say goodbye; the host ends the call. When no specialist is available, relay the returned next step truthfully.",
     "tools": [
       {
-        "name": "record_qualification",
-        "description": "Record or correct one qualification answer after the caller provides it.",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "field": {
-              "type": "string",
-              "enum": [
-                "need",
-                "region",
-                "timeframe"
-              ]
-            },
-            "value": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "field",
-            "value"
-          ],
-          "additionalProperties": false
-        },
-        "read_only": false,
-        "expected_duration": "instant",
-        "status_label": "qualification"
-      },
-      {
         "name": "start_handoff",
-        "description": "Request a specialist handoff after qualification is complete and the caller explicitly agrees.",
+        "description": "Transfer the call to a specialist after the caller confirms the final details and clearly agrees to transfer. Supply the confirmed qualification details from the conversation. Returns handoff_requested, or next_step when no specialist is available.",
         "parameters": {
           "type": "object",
           "properties": {
             "summary": {
               "type": "string"
+            },
+            "qualification": {
+              "type": "object",
+              "properties": {
+                "need": {
+                  "type": "string",
+                  "description": "The service or help the caller needs."
+                },
+                "region": {
+                  "type": "string",
+                  "description": "The caller's region."
+                },
+                "timeframe": {
+                  "type": "string",
+                  "description": "When the caller needs the service."
+                }
+              },
+              "required": [
+                "need",
+                "region",
+                "timeframe"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
-            "summary"
+            "summary",
+            "qualification"
           ],
           "additionalProperties": false
         },
@@ -57,22 +53,6 @@
     "instructions": "You are Sam, a caller looking for help choosing a business phone service. Stay in the caller role. Reveal facts naturally when asked: you need a service for a ten-person support team, you are in the north region, and you want to start this month. Do not invent tool results or speak for the assistant. After the assistant accurately reflects all three details and asks about a specialist, explicitly agree. If asked to confirm permission again, repeat your direct agreement. Do not end until the assistant reports the real handoff result and reference. Then thank them, say goodbye, and end the conversation."
   },
   "fixtures": {
-    "record_qualification": {
-      "fixture_type": "field_store",
-      "field_arg": "field",
-      "value_arg": "value",
-      "fields": [
-        {
-          "key": "need"
-        },
-        {
-          "key": "region"
-        },
-        {
-          "key": "timeframe"
-        }
-      ]
-    },
     "start_handoff": {
       "result": {
         "handoff_requested": true,
@@ -81,10 +61,6 @@
     }
   },
   "checks": [
-    {
-      "type": "fixture_complete",
-      "value": "record_qualification"
-    },
     {
       "type": "tool_called",
       "value": "start_handoff"

@@ -1,53 +1,48 @@
 # Qualification and specialist handoff
 
-This recipe is a domain-neutral starting point for a voice agent that:
+The agent collects the caller's need, region, and timeframe naturally, clarifies uncertain
+answers, reads the details back, and asks for consent. Corrections require a revised readback
+before transfer. `record_as_you_go=False` is the default for this recipe.
 
-1. Collects a small set of qualification fields naturally.
-2. Accepts corrections without restarting the flow.
-3. Reflects the collected details and asks for explicit consent.
-4. Requests a customer-owned specialist handoff and reports the real result.
+The single `start_handoff(summary, qualification)` call supplies the confirmed details once,
+at handoff. The host checks required fields before storing the snapshot and requesting the
+transfer. This avoids a recording tool round after each answer. It does not establish that
+model-provided values are truthful; the conversation evals inspect that behavior.
 
-It does not originate calls or choose a handoff destination. Your application owns dialing, routing, availability, and the final transfer.
+If the caller declines or hangs up, the transcript remains the source for later extraction;
+this recipe does not automatically extract abandoned conversations.
 
-## Exercise the conversation first
-
-Run all four cases in text, then voice. They cover an accepted handoff, a corrected answer, a declined handoff, and an unavailable specialist.
+Run the conversation cases in text, then voice:
 
 ```sh
 uv sync --frozen
-cp .env.example .env
 uv run dialt-sim examples/qualification_handoff/evals --modality text
 uv run dialt-sim examples/qualification_handoff/evals --modality voice
 ```
 
-Local runs apply the deterministic checks. The behavioral `judge` checks run when the same JSON cases are pushed to hosted evals:
+Local runs execute deterministic checks. Hosted judge checks assess the conversation and
+supported final details:
 
 ```sh
 uv run dialt-evals push examples/qualification_handoff/evals --modality text --wait
 ```
 
-## Connect application behavior
+`workflow.py` owns the plan and callback state. Run the accepted case against its application
+callback with `uv run python -u examples/qualification_handoff/with_callbacks.py`.
+The callback rejects incomplete snapshots and handles repeated requests idempotently.
 
-[`workflow.py`](workflow.py) shows the two application-owned operations. `QualificationState.record` stores or corrects an answer. `QualificationState.start_handoff` rejects an incomplete qualification and makes repeated requests idempotent.
+For a workflow that needs live structured answers, enable `record_as_you_go` in the plan and
+state, declare the plan's recording tools, and use its per-answer callback. That adds tool
+rounds and response latency. Keep declarations and simulation fixtures consistent with the
+selected mode.
 
-Run the accepted case with those Python callbacks:
+For phone calls, reuse `examples/integrations/twilio`. Your application owns dialing, routing,
+availability, transfer destinations, and one qualification state per call. Route the handoff
+tool to that state and your transfer integration.
 
-```sh
-uv run python -u examples/qualification_handoff/with_callbacks.py
-```
+## Validation limit
 
-Replace `QualificationState` with your database and routing service. Keep the tool names and overall contract stable while adapting the field enum, descriptions, and application handlers for your domain.
-
-## Add Twilio after the evals pass
-
-Reuse the maintained [`examples/integrations/twilio`](../integrations/twilio) Media Streams bridge instead of creating another transport:
-
-1. Add these two tools to its `tool_manifest`.
-2. Keep one qualification state object per Twilio `CallSid`.
-3. Route tool calls to your record and handoff handlers.
-4. Keep `CallSid` as the Dialt session ID and on every application event.
-5. Log Twilio call and transfer events under the same ID.
-
-For an outbound workflow, the customer-owned dialer originates the call. Once answered, return the same bidirectional Media Streams TwiML used by the integration. The bridge connects the live call to Dialt; your application still controls pacing, destinations, and transfer policy.
-
-Start with simulated evals, including hosted judge checks, then use a controlled Twilio sandbox pool, then compare a small live cohort against the existing flow. Promote repeated integration friction into SDK or API changes only after the recipe exposes it.
+The corresponding Jasper component eval found that Gemini 3.1 Flash Lite can assume values
+when a caller changes a detail during the final readback. Required-field validation only
+checks shape and completeness. Validate clarification and final values on your model before
+using this recording-off flow for real transfers; the current change is a draft.

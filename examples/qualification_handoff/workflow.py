@@ -4,6 +4,22 @@ from dataclasses import dataclass, field
 import re
 from typing import Any
 
+from dialt_recipes import ConversationPlan, PlanField
+
+QUALIFICATION_PLAN = ConversationPlan(
+    name="a specialist qualification conversation",
+    objective="Understand the caller's need, region and timeframe before a specialist handoff.",
+    fields=(PlanField("need", "The service or help the caller needs."),
+            PlanField("region", "The caller's region."),
+            PlanField("timeframe", "When the caller needs the service.")),
+    completion="When all required details are supported, briefly read them back and ask "
+               "whether the caller wants a specialist. Wait for confirmation before "
+               "calling start_handoff. If their reply changes or casts doubt on a detail, "
+               "resolve it and read back the revised details, then wait for confirmation "
+               "again. Do not proceed to consent with unresolved required details.",
+    tool_name="record_qualification", record_as_you_go=False,
+)
+
 _DIGIT_WORDS = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
                 "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
 _SPOKEN_GAP = r"(?:[\s,.-]|dash)*"
@@ -28,6 +44,7 @@ class QualificationState:
     """Application-owned state behind the recipe's two client tools."""
 
     required_fields: tuple[str, ...] = ("need", "region", "timeframe")
+    record_as_you_go: bool = False
     answers: dict[str, str] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     handoff_started: bool = False
@@ -55,7 +72,12 @@ class QualificationState:
         }
 
     def start_handoff(self, args: dict[str, Any]) -> dict[str, Any]:
-        missing = [item for item in self.required_fields if item not in self.answers]
+        allowed = {"summary"} if self.record_as_you_go else {"summary", "qualification"}
+        if set(args) != allowed:
+            raise ValueError(f"handoff requires: {', '.join(sorted(allowed))}")
+        snapshot = (dict(self.answers) if self.record_as_you_go else
+                    QUALIFICATION_PLAN.validate_evidence(args["qualification"]))
+        missing = [item for item in self.required_fields if item not in snapshot]
         if missing:
             raise ValueError(
                 f"qualification is incomplete; missing: {', '.join(missing)}"
@@ -70,10 +92,12 @@ class QualificationState:
                 "duplicate": True,
             }
 
+        self.answers.update(snapshot)
         self.handoff_started = True
         self.events.append({
             "type": "handoff_requested",
             "summary": summary.strip(),
+            "qualification": dict(self.answers),
         })
         return {
             "handoff_requested": True,

@@ -32,23 +32,22 @@ def test_all_qualification_handoff_cases_use_the_hosted_shape() -> None:
     ]
     for case in cases:
         assert [tool["name"] for tool in case.target_tools] == [
-            "record_qualification",
             "start_handoff",
         ]
-        assert "requires_permission" not in case.target_tools[1]
+        assert "requires_permission" not in case.target_tools[0]
         assert case.target_options.get("end_call") is False
-        assert case.fixtures["record_qualification"]["fixture_type"] == "field_store"
+        assert "record_qualification" not in case.fixtures
+        assert "qualification" in case.target_tools[0]["parameters"]["required"]
 
 
 def test_accepted_case_has_deterministic_completion_checks() -> None:
     case = json.loads((EVALS / "accepted_handoff.json").read_text())
-    assert [check["type"] for check in case["checks"][:3]] == [
-        "fixture_complete",
+    assert [check["type"] for check in case["checks"][:2]] == [
         "tool_called",
         "regex",
     ]
     assert case["fixtures"]["start_handoff"]["result"]["handoff_reference"] == "HX-2048"
-    assert case["checks"][2]["value"] == WORKFLOW.spoken_reference_pattern("HX-2048")
+    assert case["checks"][1]["value"] == WORKFLOW.spoken_reference_pattern("HX-2048")
 
 
 def test_reference_check_accepts_a_spoken_reading() -> None:
@@ -63,7 +62,7 @@ def test_reference_check_accepts_a_spoken_reading() -> None:
 
 
 def test_qualification_state_records_corrections_and_handoff() -> None:
-    state = QualificationState()
+    state = QualificationState(record_as_you_go=True)
     assert state.record({"field": "need", "value": "  choose a plan "})["complete"] is False
     state.record({"field": "region", "value": "south"})
     state.record({"field": "region", "value": "north"})
@@ -88,7 +87,7 @@ def test_qualification_state_records_corrections_and_handoff() -> None:
 
 
 def test_qualification_state_rejects_incomplete_or_invalid_calls() -> None:
-    state = QualificationState()
+    state = QualificationState(record_as_you_go=True)
     with pytest.raises(ValueError, match="configured qualification field"):
         state.record({"field": "unknown", "value": "x"})
     with pytest.raises(ValueError, match="non-empty"):
@@ -96,3 +95,15 @@ def test_qualification_state_rejects_incomplete_or_invalid_calls() -> None:
     state.record({"field": "need", "value": "choose a plan"})
     with pytest.raises(ValueError, match="missing: region, timeframe"):
         state.start_handoff({"summary": "not ready"})
+
+
+def test_default_handoff_collects_snapshot_once():
+    state = QualificationState()
+    snapshot = {'need': 'a new phone service', 'region': 'north', 'timeframe': 'this month'}
+    with pytest.raises(ValueError, match='missing'):
+        state.start_handoff({'summary': 'not ready', 'qualification': {'region': 'north'}})
+    assert state.answers == {} and not state.events
+    result = state.start_handoff({'summary': 'North, this month.', 'qualification': snapshot})
+    assert result['handoff_requested']
+    assert state.answers == snapshot
+    assert [e['type'] for e in state.events] == ['handoff_requested']
