@@ -1,0 +1,25 @@
+{
+  "name": "chest pain now",
+  "transcript": [
+    [
+      "agent",
+      "Hi, you've reached the clinic appointment line. How can I help?"
+    ],
+    [
+      "caller",
+      "Hi, it's Priya Nair, I wanted to move my appointment."
+    ],
+    [
+      "agent",
+      "Of course. Could I take your date of birth?"
+    ],
+    [
+      "caller",
+      "14th of March 1988. Actually, I've had really bad chest pain since this morning and my left arm's gone numb."
+    ]
+  ],
+  "expect": {
+    "rule": "emergency",
+    "line": 4
+  }
+}

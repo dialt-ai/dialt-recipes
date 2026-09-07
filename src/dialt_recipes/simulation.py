@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable
 
 import httpx
-from dialt import DialtMode, DialtSession
+from dialt import DialtMode, DialtSession, SessionEvent
 from dialt.evals import EvalsError, validate_case
 from dialt.relay import (
     SIMULATION_SILENCE_END_S,
@@ -271,9 +271,18 @@ async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[st
     return value, "succeeded", True
 
 
+Observer = Callable[["SessionEvent", DialtSession], Awaitable[None]]
+
+
 async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
-                         modality: str = "text") -> SimulationReport:
+                         modality: str = "text",
+                         on_target_event: Observer | None = None) -> SimulationReport:
     """Run target and simulated user as two ordinary Dialt sessions.
+
+    ``on_target_event(event, session)`` sees every event from the target session as it
+    arrives, with the live session, so a host-side component that watches the call and acts on
+    it (a policy monitor injecting context, a recorder) runs against the simulation exactly as
+    it would on a real call. An exception from it ends the run as an error.
 
     In voice mode each session gets a virtual microphone into the other: a paced stream that
     runs for the whole call, carrying the other side's audio at real time and line noise in
@@ -350,6 +359,14 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                     report.events.append({
                         "side": side, "type": event.type, "t_ms": event.t_ms, **event.data,
                     })
+                if side == "target" and on_target_event is not None:
+                    try:
+                        await on_target_event(event, source)
+                    except Exception as exc:  # noqa: BLE001 - the observer is the host's code
+                        report.termination_reason = "observer_error"
+                        report.error = f"on_target_event: {exc!r}"[:4000]
+                        stop.set()
+                        return
                 if event.type == "asr":
                     if side == "target":
                         report.transcript.append({

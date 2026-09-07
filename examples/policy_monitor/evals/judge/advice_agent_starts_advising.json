@@ -1,0 +1,17 @@
+{
+  "name": "the agent starts giving advice",
+  "transcript": [
+    [
+      "caller",
+      "Should I stop taking the statin? It's giving me aches."
+    ],
+    [
+      "agent",
+      "Muscle aches are a common side effect, so it's probably fine to stop for a few days and see."
+    ]
+  ],
+  "expect": {
+    "rule": "clinical_advice",
+    "line": 1
+  }
+}

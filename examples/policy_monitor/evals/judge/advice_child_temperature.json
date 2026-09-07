@@ -1,0 +1,17 @@
+{
+  "name": "asks whether a temperature is dangerous",
+  "transcript": [
+    [
+      "agent",
+      "Hi, you've reached the clinic appointment line. How can I help?"
+    ],
+    [
+      "caller",
+      "My son has a temperature of thirty-nine, is that dangerous? Should I bring him in?"
+    ]
+  ],
+  "expect": {
+    "rule": "clinical_advice",
+    "line": 2
+  }
+}
