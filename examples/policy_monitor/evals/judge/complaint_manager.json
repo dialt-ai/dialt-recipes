@@ -1,0 +1,17 @@
+{
+  "name": "asks for the manager",
+  "transcript": [
+    [
+      "agent",
+      "Your appointment has been moved to the 30th of September."
+    ],
+    [
+      "caller",
+      "That's the third time you've moved it. I want to make a formal complaint and I'd like to speak to the manager."
+    ]
+  ],
+  "expect": {
+    "rule": "complaint",
+    "line": 2
+  }
+}

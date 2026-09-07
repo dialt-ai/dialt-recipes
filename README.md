@@ -43,6 +43,14 @@ context intact. A clinic appointment line is the worked example. Eval cases rend
 workflow, a local host that confirms the switch from the session's `voice` event, and a Twilio
 wiring sketch.
 
+## Policy monitor beside the call
+
+[`examples/policy_monitor`](examples/policy_monitor) runs a second agent beside a live call: a
+Dialt text session whose instructions are the policy and whose only tool raises a flag. The host
+feeds it the transcript as it happens and injects each flagged rule's instruction into the live
+session, spoken at once or picked up at the agent's next turn. Two eval sets: a judge dataset
+that scores which rule fired and how late, and full-call cases run with the monitor attached.
+
 ## Guided customer-research assistant
 
 [`examples/guided_customer_research`](examples/guided_customer_research) is a non-trivial guided
