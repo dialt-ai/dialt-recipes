@@ -3,7 +3,7 @@ hand-off tool declared, and when `handoff_to_agent` lands the host declares the 
 tools and switches the voice on the live target session. Each run confirms the switch from the
 session's own `voice` event.
 
-    uv run python -u examples/agent_handoff/host.py [CASE_OR_DIR ...]
+    uv run python -u examples/agent_to_agent_handoff/host.py [CASE_OR_DIR ...]
 
 Defaults to `evals/full_call`. `DIALT_MODALITY` selects text or voice (default voice: the
 broker applies `set_tools` and `set_voice` on the voice path today, and this run is the check
@@ -43,13 +43,15 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
         and event.get("voice") == state.specialist_voice
         for event in report.events
     )
+    expects_handoff = any(check.get("type") == "tool_called"
+                          and check.get("value") == "handoff_to_agent" for check in case.checks)
     application_checks = [
         {"type": "application_state", "name": "intake handed off with complete details",
          "pass": state.handed_off, "detail": "" if state.handed_off else "no handoff"},
         {"type": "application_state", "name": f"session voice switched to {state.specialist_voice}",
          "pass": switched,
          "detail": "" if switched else "no voice event confirmed the switch (is the key on the roster?)"},
-    ]
+    ] if expects_handoff else []
     passed = report.passed and all(check["pass"] for check in application_checks)
     return passed, {
         "case": case.name, "modality": modality, "passed": passed,
