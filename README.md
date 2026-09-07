@@ -52,9 +52,10 @@ a persistent `ck_` key).
 
 ## Evals: run cases locally, then push them
 
-A case is one JSON file, the same document the hosted evals API accepts: `name`, `starter`,
-`target` (`instructions`, `tools`, `end_call`), `simulator` (`instructions`), `fixtures`, `checks`
-and `limits`. [`examples/simulations/appointment_booking.json`](examples/simulations/appointment_booking.json)
+A case is one JSON file, the same document the hosted evals API accepts: `name`, `starter` (or
+`target.greeting`, when the agent opens the call and the simulated user answers it), `target`
+(`instructions`, `tools`, `end_call`), `simulator` (`instructions`), `fixtures`, `checks` and
+`limits`. [`examples/simulations/appointment_booking.json`](examples/simulations/appointment_booking.json)
 is a complete one. Field reference: the [evals guide](https://dialt.com/docs/api/evals/).
 
 The agent ends a call by calling the managed `end_call` tool, which `target.end_call` (default

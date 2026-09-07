@@ -332,3 +332,41 @@ def test_callable_fixture_rejection_is_a_failed_tool_result() -> None:
     result, outcome, verified = asyncio.run(_fixture_result({"start": reject}, "start", {}, None))
     assert result == {"error": "qualification incomplete"}
     assert (outcome, verified) == ("failed", False)
+
+
+@pytest.mark.parametrize("modality", ["text", "voice"])
+def test_target_greeting_opens_the_conversation_and_nothing_is_sent_first(monkeypatch, modality):
+    """With target.greeting the target session gets the greeting and the simulated user opens
+    silent: no starter is sent in text mode and the voice simulator has no greeting of its own.
+    The broker plays the target greeting at ready, so the relays forward it like any turn."""
+    target, simulator = _FakeSession([]), _FakeSession([])
+    sessions = iter([target, simulator])
+    modes = []
+
+    async def connect(*_args, **kwargs):
+        modes.append(kwargs["mode"])
+        return next(sessions)
+
+    class RelayStub:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr("dialt_recipes.simulation.DialtSession.connect", connect)
+    monkeypatch.setattr("dialt_recipes.simulation.VoiceTurnRelay", RelayStub)
+    case = SimulationCase.from_dict({
+        "name": "n", "target": {"greeting": "Hi, how old are you?"}, "limits": {"timeout_s": 10}})
+    assert case.starter == "" and case.target_greeting == "Hi, how old are you?"
+    report = asyncio.run(run_simulation("ws://test", "key", case, modality=modality))
+
+    assert report.termination_reason == "timeout"
+    assert target.sent == []
+    assert modes[0].greeting == "Hi, how old are you?"
+    assert modes[1].greeting is False
+    with pytest.raises(ValueError, match="not both"):
+        SimulationCase.from_dict({"name": "n", "starter": "hi", "target": {"greeting": "Hello"}})

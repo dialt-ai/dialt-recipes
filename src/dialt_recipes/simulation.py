@@ -54,11 +54,12 @@ MAX_FIXTURE_FIELD_VALUE_CHARS = 20_000
 @dataclass(frozen=True)
 class SimulationCase:
     name: str
-    starter: str
+    starter: str                 # "" when target_greeting opens the conversation
     target_instructions: str
     simulator_instructions: str
     target_tools: tuple[dict[str, Any], ...] = ()
     target_options: dict[str, Any] = field(default_factory=dict)   # voice, web_search, end_call
+    target_greeting: str = ""    # the target speaks first with this, as a deployed agent does
     fixtures: dict[str, Fixture] = field(default_factory=dict)
     checks: tuple[dict[str, Any], ...] = ()
     max_turns: int = 20
@@ -69,9 +70,12 @@ class SimulationCase:
     def from_dict(cls, value: dict[str, Any], *, modality: str | None = None) -> "SimulationCase":
         """Build a case from the hosted case document.
 
-        ``name``, ``starter``, ``target`` (``instructions``, optional ``tools``, ``voice``,
-        ``web_search``, ``end_call``), ``simulator`` (``instructions``), ``fixtures``,
+        ``name``, ``starter``, ``target`` (``instructions``, optional ``greeting``, ``tools``,
+        ``voice``, ``web_search``, ``end_call``), ``simulator`` (``instructions``), ``fixtures``,
         ``checks`` and ``limits`` (``max_turns``, ``timeout_s``, ``silence_s``).
+
+        A case opens with exactly one of ``starter`` (the simulated user speaks first) and
+        ``target.greeting`` (the target opens, as a deployed agent with a fixed greeting does).
 
         ``target.end_call`` (default true) gives the agent the managed ``end_call`` tool, the
         only way it can end the conversation. The simulated user always has it.
@@ -94,6 +98,7 @@ class SimulationCase:
             target_tools=tuple(target.get("tools") or ()),
             target_options={key: target[key] for key in ("voice", "web_search", "end_call")
                             if key in target},
+            target_greeting=str(target.get("greeting") or "").strip(),
             fixtures=dict(value.get("fixtures") or {}),
             checks=checks,
             max_turns=int(limits["max_turns"]),
@@ -252,7 +257,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         url, api_key=api_key, session_id=target_id,
         mode=DialtMode(
             modality=modality, instructions=case.target_instructions,
-            tools=list(case.target_tools) or None, greeting=False,
+            tools=list(case.target_tools) or None, greeting=case.target_greeting or False,
             voice=case.target_options.get("voice"),
             web_search=bool(case.target_options.get("web_search", False)),
             **target_end_call(case.target_options),
@@ -268,7 +273,8 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
             mode=DialtMode(
                 modality=modality, instructions=case.simulator_instructions,
                 tools=None, end_call=True,
-                greeting=case.starter if modality == "voice" else False,
+                # Whoever has the opener speaks first; the other side opens silent.
+                greeting=case.starter if modality == "voice" and case.starter else False,
                 silence_nudge_s=SIMULATION_SILENCE_NUDGE_S if modality == "voice" else None,
                 silence_end_s=SIMULATION_SILENCE_END_S if modality == "voice" else None,
             ),
@@ -434,7 +440,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         asyncio.create_task(watchdog()),
     ]
     try:
-        if modality == "text":
+        if modality == "text" and case.starter:
             await target.send_text(case.starter)
         for mic in voice_relays.values():
             mic.start()          # both lines are live from the first moment, before anyone speaks
