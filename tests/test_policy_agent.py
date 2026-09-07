@@ -58,7 +58,7 @@ def test_cases_carry_the_workflow_its_policy_and_a_policy_block(subset, count) -
         assert set(policy) == {"expect", "forbid"}
         assert set(policy["expect"]) <= set(RULE_IDS) and set(policy["forbid"]) <= set(RULE_IDS)
         assert not set(policy["expect"]) & set(policy["forbid"])
-        assert set(policy["expect"]) | set(policy["forbid"]) or policy["expect"]
+        assert set(policy["expect"]) | set(policy["forbid"])
 
 
 def test_the_scripted_set_covers_every_rule_and_the_near_misses() -> None:
