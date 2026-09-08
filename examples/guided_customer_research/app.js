@@ -1,4 +1,4 @@
-import { DialtClient } from 'https://cdn.jsdelivr.net/npm/@dialt/sdk@0.27.2/src/index.js';
+import { DialtClient } from 'https://cdn.jsdelivr.net/npm/@dialt/sdk@0.32.0/src/index.js';
 
 const plan = await fetch('./plan.json').then(response => response.json());
 document.querySelector('#record-as-you-go').checked = plan.record_as_you_go === true;
