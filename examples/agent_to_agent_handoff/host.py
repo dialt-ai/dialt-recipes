@@ -35,8 +35,11 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
         return result
 
     async def on_target_event(event, session):
-        if boundary.observe(event):
+        phase = boundary.observe(event)
+        if phase == "pass":
             acks.append(await state.pass_call_on(session))
+        elif phase == "release":
+            await state.release_on(session)
 
     case = replace(
         case,

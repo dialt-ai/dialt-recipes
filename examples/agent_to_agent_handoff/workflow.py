@@ -201,12 +201,19 @@ class HandoffState:
 
     async def pass_call_on(self, session: DialtSession) -> dict[str, Any]:
         """Pass the live call to the specialist once intake's hand-off turn has closed
-        (`HandoffBoundary` says when). Returns the broker's acknowledgement of the note."""
+        (`HandoffBoundary` says when). The specialist's first turn must be the patient lookup:
+        every rule it has depends on the record, and left to itself the model sometimes spoke
+        appointment facts it had never fetched. Returns the broker's acknowledgement of the note."""
         if not self.handed_off:
             raise RuntimeError("the hand-off has not landed")
         ack = await pass_call_to(
             session, instructions=specialist_instructions(), tools=specialist_tools(),
-            voice=self.specialist_voice, note=self.handover_note())
+            voice=self.specialist_voice, note=self.handover_note(), first_tool="lookup_patient")
         self.passed = True
         self.events.append({"type": "passed", "accepted": bool(ack.get("accepted"))})
         return ack
+
+    async def release_on(self, session: DialtSession) -> None:
+        """The specialist's first reply has closed: tool use is the model's own choice again."""
+        await session.set_tool_choice("auto")
+        self.events.append({"type": "released"})

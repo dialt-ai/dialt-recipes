@@ -100,8 +100,8 @@ def test_handoff_validates_before_anything_changes_on_the_call() -> None:
 def test_handoff_records_once_and_the_pass_declares_the_specialist_in_order() -> None:
     """The tool result closes intake's turn with nothing but handoff_complete; the pass, sent
     once that turn has closed, declares the specialist in the order the broker needs: the new
-    instructions with new_speaker (the fold), then tools, then voice, then the note that makes
-    the specialist speak."""
+    instructions with new_speaker (the fold), then tools, then the forced first tool, then voice,
+    then the note that makes the specialist speak. The first reply closing releases the choice."""
     class Session:
         def __init__(self) -> None:
             self.calls: list[tuple] = []
@@ -111,6 +111,9 @@ def test_handoff_records_once_and_the_pass_declares_the_specialist_in_order() ->
 
         async def set_tools(self, tools):
             self.calls.append(("set_tools", [tool["name"] for tool in tools]))
+
+        async def set_tool_choice(self, choice, *, one_shot=False):
+            self.calls.append(("set_tool_choice", choice, one_shot))
 
         async def set_voice(self, voice):
             self.calls.append(("set_voice", voice))
@@ -129,14 +132,18 @@ def test_handoff_records_once_and_the_pass_declares_the_specialist_in_order() ->
     ack = asyncio.run(state.pass_call_on(session))
     assert ack["accepted"] is True and state.passed is True
     assert [c[0] for c in session.calls] == [
-        "set_instructions", "set_tools", "set_voice", "inject_context"]
+        "set_instructions", "set_tools", "set_tool_choice", "set_voice", "inject_context"]
     assert session.calls[0] == ("set_instructions", WORKFLOW.specialist_instructions(), True)
     assert session.calls[1] == ("set_tools", ["lookup_patient", "reschedule_appointment"])
-    assert session.calls[2] == ("set_voice", "warm")
-    note = session.calls[3]
+    # The first specialist turn must be the lookup (after set_tools, which resets the choice).
+    assert session.calls[2] == ("set_tool_choice", {"tool": "lookup_patient"}, False)
+    assert session.calls[3] == ("set_voice", "warm")
+    note = session.calls[4]
     assert note[2:] == ("context", True)
     assert "Priya Nair" in note[1] and "1988-03-14" in note[1] and "Appointment query." in note[1]
-    assert [event["type"] for event in state.events] == ["handoff", "passed"]
+    asyncio.run(state.release_on(session))
+    assert session.calls[-1] == ("set_tool_choice", "auto", False)
+    assert [event["type"] for event in state.events] == ["handoff", "passed", "released"]
 
 
 def test_the_pass_needs_a_landed_handoff() -> None:

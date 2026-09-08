@@ -23,14 +23,20 @@ frames on the same session:
    It reads intake's lines as a previous agent's, not as its own turns to continue.
 2. `set_tools(specialist_tools)`: the lookup and reschedule tools arrive; the hand-off tool does
    not carry over.
-3. `set_voice(specialist_voice)`: the voice changes from the specialist's first word.
-4. `inject_context(note, reply=True)`: the host's one-line note (who was passed, why) makes the
+3. `set_tool_choice({"tool": "lookup_patient"})`: the specialist's first turn must be the
+   lookup. Every rule the specialist has depends on the record, and left to itself the model
+   sometimes stated appointment or account facts it had never fetched (loan-servicing dev runs,
+   2026-09-08). This is the API's own "the next turn must use this tool" contract, not a prompt
+   rule; the host sets it back to `"auto"` when the first reply has closed.
+4. `set_voice(specialist_voice)`: the voice changes from the specialist's first word.
+5. `inject_context(note, reply=True)`: the host's one-line note (who was passed, why) makes the
    specialist speak first.
 
 The broker refuses the fold while a reply is in flight, so the pass has to land between replies.
 `dialt_recipes.HandoffBoundary` reads the session's own `turn`, `done` and `working` events and
-says when intake's hand-off turn has closed, whether that turn spoke a bridge and an answer,
-closed after its bridge, or answered without a bridge. `host.py` shows the wiring.
+returns `"pass"` when intake's hand-off turn has closed, whether that turn spoke a bridge and an
+answer, closed after its bridge, or answered without a bridge, and `"release"` when the
+specialist's first reply has closed. `host.py` shows the wiring.
 
 Each agent has only its own instructions (`workflow.intake_instructions()`,
 `workflow.specialist_instructions()`). Neither is told the other's rules, and the prompt does
@@ -101,8 +107,11 @@ def call_hooks():
         live["session"] = session
 
     async def on_event(event):
-        if boundary.observe(event):
+        phase = boundary.observe(event)
+        if phase == "pass":
             await state.pass_call_on(live["session"])
+        elif phase == "release":
+            await state.release_on(live["session"])
 
     async def execute_tool(name, args):
         if name == "handoff_to_agent":
