@@ -1,60 +1,72 @@
 # Agent-to-agent hand-off on one call
 
-Two agent personas share one phone call: an obviously synthetic intake voice takes the
-patient's name, date of birth and reason for calling, then a warm, human-sounding scheduling
-specialist picks the call up and helps. It is one Dialt session with one conversation history.
-Nothing is passed between sessions and no second connection is opened. The example is a clinic
-appointment line; swap the plan fields, the specialist's tools and the role text for your own
-domain and the mechanics stay the same.
+Two agents share one phone call: an obviously synthetic intake voice takes the patient's name,
+date of birth and reason for calling, then a warm, human-sounding scheduling specialist picks
+the call up and helps. It is one Dialt session with one conversation. Nothing is passed between
+sessions and no second connection is opened, so the caller hears no gap at the seam. The
+example is a clinic appointment line; swap the plan fields, the specialist's tools and the two
+role texts for your own domain and the mechanics stay the same.
 
-The hand-off is a tool. Intake calls `handoff_to_agent(summary, details, caller_confirmed)`
-once it has read the details back and the caller has said they are right; the host refuses a
-call with `caller_confirmed` false, so a hand-off cannot land on an unconfirmed read-back (with
-the read-back only in the prompt, the model skipped it in about half of the runs where the
-caller gave everything in one breath). The host validates the details, declares the specialist's tools with `set_tools`,
-switches the session voice with `set_voice`, and returns the handover note as the tool result.
-The model continues the same call as the specialist, with everything intake collected still in
-its context. Both roles are in the session instructions from the start
-(`workflow.instructions()`), so the hand-off changes nothing about the prompt: the tool result
-is the boundary, and the voice change lands on the specialist's first reply.
+## How the pass works
 
-The phase boundary is also a tool contract. The host starts the session with only the hand-off
-tool declared (`intake_tools()`), so however the caller front-loads their details, intake cannot
-look the patient up or act as the specialist early: its only move is the hand-off. When it
-lands, the host declares the full manifest with `set_tools` and switches the voice. With every
-tool declared from the start, the model skipped the hand-off in two of three runs when a caller
-gave everything in one breath, and answered as the specialist itself.
+The hand-off is a tool intake calls once the caller has confirmed the read-back:
+`handoff_to_agent(summary, details, caller_confirmed)`. The host validates it (a call with
+`caller_confirmed` false is refused, so a hand-off cannot land on an unconfirmed read-back) and
+returns `handoff_complete`. Intake finishes its own turn: it tells the caller it is passing them
+over and stops.
+
+When that turn has closed, the host passes the call with `dialt_recipes.pass_call_to`, four
+frames on the same session:
+
+1. `set_instructions(specialist, new_speaker=True)`: the specialist's instructions replace
+   intake's, and the broker folds everything said so far into a transcript the specialist holds.
+   It reads intake's lines as a previous agent's, not as its own turns to continue.
+2. `set_tools(specialist_tools)`: the lookup and reschedule tools arrive; the hand-off tool does
+   not carry over.
+3. `set_voice(specialist_voice)`: the voice changes from the specialist's first word.
+4. `inject_context(note, reply=True)`: the host's one-line note (who was passed, why) makes the
+   specialist speak first.
+
+The broker refuses the fold while a reply is in flight, so the pass has to land between replies.
+`dialt_recipes.HandoffBoundary` reads the session's own `turn`, `done` and `working` events and
+says when intake's hand-off turn has closed, whether that turn spoke a bridge and an answer,
+closed after its bridge, or answered without a bridge. `host.py` shows the wiring.
+
+Each agent has only its own instructions (`workflow.intake_instructions()`,
+`workflow.specialist_instructions()`). Neither is told the other's rules, and the prompt does
+not grow at the seam. The earlier design, both roles in one prompt with `set_tools` and
+`set_voice` alone and a "you are now the specialist" note in the tool result, is what the
+loan-servicing sessions of 2026-09-08 showed failing: the specialist's opening was generated as
+the second half of intake's "connecting you now" sentence, under intake's prompt, and it
+invented account facts at the seam.
 
 Voices: `INTAKE_VOICE` (default `chime`) and `SPECIALIST_VOICE` (default `southern_us_female`)
 are roster keys. An unknown key is ignored by the server and the call carries on in the intake
 voice; `host.py` reports whether the session confirmed the switch.
 
-## What the specialist is told
+## What each agent is told
 
-Three rules in the role text came out of live calls and each has a case behind it:
+Intake: the collection plan, that it is automated, and that the hand-off is its only tool. The
+phase boundary is also a tool contract: the session starts with only `handoff_to_agent`
+declared (`intake_tools()`), so however the caller front-loads their details, intake cannot look
+the patient up or act as the specialist early. With every tool declared from the start, the model
+skipped the hand-off in two of three runs when a caller gave everything in one breath.
 
-- The specialist is an automated agent, not a person, and there is no one else to transfer
-  the call to. Without this the model presented the specialist as human and invented transfers.
-- A patient's appointments are discussed only with the patient. Without this the specialist
-  read another person's appointment out to whoever gave the details. The case for it checks
-  the outcome only: when the caller says up front that they are not the patient, intake may
-  decline on the spot rather than hand off, and that is fine.
-- A change has happened only when the tool result says so.
-
-The hand-off tool's `status_label` names an automated specialist on purpose: the latency bridge
-Dialt speaks while a tool runs is written from that label, and a vaguer one produced "let me get
-you connected with the right folks" on a live call.
+Specialist: three rules that came out of live calls, each with a case behind it. It is an
+automated agent and there is no one else to transfer to (without this the model presented the
+specialist as human and invented transfers). A patient's appointments are discussed only with
+the patient (without this the specialist read another person's appointment out to whoever gave
+the details). A change has happened only when the tool result says so.
 
 ## Two case sets
 
 Both sets are rendered from `workflow.py` by `render_cases.py`, so the cases always carry the
-prompt and tools the recipe runs; re-render after editing either.
+prompt and tools the recipe runs; re-render after editing either. Every case starts as intake;
+the specialist's instructions arrive with the pass and are never in a case document.
 
 `evals/intake/` declares only the hand-off tool, exactly as a real host starts the call. The
-fixed hand-off result tells the assistant to confirm the hand-off and end the call, so the judge
-sees a complete intake and nothing else. These are honest runs of the intake persona, hosted or
-local, with judge criteria for the read-back, a corrected date of birth, and a caller who asks
-for a person:
+fixed hand-off result tells the assistant no specialist follows and to end the call, so the
+judge sees a complete intake and nothing else. These run hosted or locally:
 
 ```sh
 uv sync --frozen
@@ -62,53 +74,50 @@ uv run dialt-sim examples/agent_to_agent_handoff/evals/intake --modality text
 uv run dialt-evals push examples/agent_to_agent_handoff/evals/intake --modality text --wait
 ```
 
-`evals/full_call/` declares every tool and runs the whole call. They are for `host.py`, which
-starts each one with the intake manifest, swaps in the specialist's tools and switches the voice
-when the hand-off lands, and reports whether the session confirmed the switch:
+`evals/full_call/` declares every tool for its fixtures and runs the whole call. They are for
+`host.py`, which starts each one as intake, passes the call when the hand-off turn closes, and
+reports whether the pass was accepted and the voice confirmed:
 
 ```sh
 uv run python -u examples/agent_to_agent_handoff/host.py                # voice, the default
 DIALT_MODALITY=text uv run python -u examples/agent_to_agent_handoff/host.py
 ```
 
-The full-call cases are `host.py`-only by construction: hosted runs and `dialt-sim` cannot swap
-a manifest mid-call, and their fixed hand-off result ends the call at the hand-off.
-
-Two things the runs showed, kept here because they shape the design. With every tool declared
-from the start, the model answered as the specialist without handing off in two of three runs.
-And when the post-hand-off agent had no tools at all (an intake case run past the hand-off), it
-invented an appointment date and narrated a change rather than saying it could not see the
-record. Both are why the specialist's tools arrive with the hand-off and never before.
+The full-call cases are `host.py`-only by construction: hosted runs and `dialt-sim` cannot pass a
+call, and their fixed hand-off result ends the call at the hand-off.
 
 ## On a phone call
 
-Reuse `examples/integrations/twilio`. Build the state and hooks per call, keep the session from
-`on_connected`, and route `handoff_to_agent` to `HandoffState.handoff_on(session, args)`:
+Reuse `examples/integrations/twilio`. Build the state and boundary per call, keep the session
+from `on_connected`, feed every event to the boundary from `on_event`, and route
+`handoff_to_agent` to `HandoffState.handoff`:
 
 ```python
 def call_hooks():
-    """One HandoffState and one live session per call; never share them across calls."""
-    state, live = HandoffState(), {}
+    """One HandoffState, one boundary and one live session per call; never share them."""
+    state, boundary, live = HandoffState(), HandoffBoundary(), {}
 
     async def on_connected(session):
         live["session"] = session
 
+    async def on_event(event):
+        if boundary.observe(event):
+            await state.pass_call_on(live["session"])
+
     async def execute_tool(name, args):
         if name == "handoff_to_agent":
-            return await state.handoff_on(live["session"], args)
+            result = state.handoff(args)
+            boundary.landed = True
+            return result
         ...
 
-    mode = DialtMode(voice=state.intake_voice, instructions=instructions(),
+    mode = DialtMode(voice=state.intake_voice, instructions=intake_instructions(),
                      tools=intake_tools(), greeting=GREETING)
-    return mode, BridgeHooks(execute_tool=execute_tool, on_connected=on_connected)
+    return mode, BridgeHooks(execute_tool=execute_tool, on_connected=on_connected,
+                             on_event=on_event)
 ```
 
-Because the switch happens inside the Dialt session, Twilio sees one uninterrupted media stream:
-no language or voice change on the Twilio side, no second leg.
-
-## Why not two sessions
-
-A second session would need the first one's history replayed and would open an audio gap at the
-seam. A voice switch keeps the history, keeps the endpointer state, and costs nothing the caller
-can hear. Changing the instructions mid-call is also unnecessary: with both roles declared up
-front, the tool result tells the model which role it is in.
+Because the pass happens inside the Dialt session, Twilio sees one uninterrupted media stream.
+Passing the caller to a human is a different operation and does not use this recipe: see the
+permission-gated `request_human_handoff` tool in the Twilio example, which moves the call leg and
+ends the session with `wrap_up`.

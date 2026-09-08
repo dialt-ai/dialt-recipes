@@ -1,13 +1,14 @@
-"""Two agent personas on one call: an intake voice that takes details, then a specialist voice
-that helps. One Dialt session, one conversation history, no second connection.
+"""Two agents on one call: an intake voice that takes details, then a specialist voice that
+helps. One Dialt session, one conversation, no second connection.
 
-The example is a clinic appointment line. The intake persona is an obviously synthetic voice
-that takes the patient's name, date of birth and reason for calling. When it has them, it calls
-`handoff_to_agent`. The host declares the specialist's tools, switches the session voice and
-returns the handover note as the tool result; the model continues the same call as the
-scheduling specialist, with everything intake collected still in its context. The specialist
-voice is a warm, human-sounding one. Both roles live in the session instructions from the
-start, so the hand-off changes nothing about the prompt: the tool result is the boundary.
+The example is a clinic appointment line. Intake is an obviously synthetic voice that takes
+the patient's name, date of birth and reason for calling, reads them back, and calls
+`handoff_to_agent` once the caller confirms. The host validates and resolves the tool; intake
+finishes its own turn. When that turn has closed, the host passes the call
+(`HandoffState.pass_call_on`, built on `dialt_recipes.pass_call_to`): the specialist's
+instructions replace intake's, the broker folds the call so far into a transcript the
+specialist holds, the specialist's tools and voice are declared, and a short note makes it
+speak first. Each agent has its own instructions; neither is told about the other's rules.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from dialt import DialtSession
-from dialt_recipes import ConversationPlan, PlanField
+from dialt_recipes import ConversationPlan, PlanField, pass_call_to
 
 DEFAULT_INTAKE_VOICE = "chime"
 DEFAULT_SPECIALIST_VOICE = "southern_us_female"
@@ -32,44 +33,61 @@ INTAKE_PLAN = ConversationPlan(
     completion="When you have all three, read them back in one sentence and ask the caller "
                "if that is right. Call handoff_to_agent only after the caller confirms, even "
                "when they gave everything at once. The specialist is the next step of this "
-               "same call, so no permission to transfer is needed. Never say the specialist "
-               "has the call until the tool result confirms it.",
+               "same call, so no permission to transfer is needed. When the tool result "
+               "reports handoff_complete, tell the caller you are passing them to the "
+               "specialist and stop there: the specialist speaks next.",
     record_as_you_go=False,
 )
 
+INTAKE_ROLE = (
+    "You are the intake step of the clinic's appointment line, an automated agent, not a "
+    "person; if the caller asks whether they are speaking to a person, answer honestly. The "
+    "scheduling specialist you pass calls to is also an automated agent on this same system. "
+    "You cannot look up or change appointments: handoff_to_agent is your only tool."
+)
+
 SPECIALIST_ROLE = (
-    "The scheduling specialist is an automated agent on this same system, not a person. Until "
-    "handoff_to_agent has returned, handoff_to_agent is the only tool available to you. "
-    "After handoff_to_agent returns handoff_complete, you continue the same call as the "
-    "scheduling specialist. You already have the intake details, so do not ask for them "
-    "again. Call lookup_patient before answering anything about an appointment, and discuss "
-    "a patient's appointments only with the patient themselves: if the caller is not the "
-    "patient, do not share any appointment details; say so and offer to have the clinic call "
-    "the patient back. Use reschedule_appointment to move an appointment once the caller has "
-    "agreed to the new date. A change has happened only when the tool result says so. There "
-    "is no one else to transfer the call to: offer a callback for anything the tools cannot "
-    "settle on this call. At any point in the call, if the caller asks whether they are "
-    "speaking to a person, answer honestly."
+    "You are the clinic's scheduling specialist, an automated agent, not a person; if the "
+    "caller asks, say so. Intake has just passed this caller to you on the same call, and the "
+    "transcript so far is in your context: you already have the patient's name, date of birth "
+    "and reason, so do not ask for them again, and do not say you are connecting or "
+    "transferring anyone. Call lookup_patient before answering anything about an appointment, "
+    "and discuss a patient's appointments only with the patient themselves: if the caller is "
+    "not the patient, do not share any appointment details; say so and offer to have the "
+    "clinic call the patient back. Use reschedule_appointment to move an appointment once the "
+    "caller has agreed to the new date. A change has happened only when the tool result says "
+    "so. There is no one else to transfer the call to: offer a callback for anything the tools "
+    "cannot settle on this call."
 )
 
 GREETING = ("Hi, you've reached the clinic appointment line. To get started, could I take the "
             "patient's name?")
 
 
-def instructions() -> str:
-    """One instruction string for the whole call: the intake plan, then the specialist role."""
-    return f"{INTAKE_PLAN.instructions()}\n\n{SPECIALIST_ROLE}"
+def intake_instructions() -> str:
+    """What the session starts with: the intake plan and intake's own role, nothing about how
+    the specialist works."""
+    return f"{INTAKE_PLAN.instructions()}\n\n{INTAKE_ROLE}"
+
+
+def specialist_instructions() -> str:
+    """What replaces intake's instructions when the call is passed."""
+    return SPECIALIST_ROLE
 
 
 def intake_tools() -> list[dict[str, Any]]:
     """The phase boundary as a tool contract: intake declares only the hand-off, so however the
-    caller front-loads their details it cannot act as the specialist early. The host swaps in
-    the full manifest when the hand-off lands. The intake cases start exactly like this; the
-    full-call cases declare every tool for host.py, which starts here and swaps."""
+    caller front-loads their details it cannot act as the specialist early."""
     return [tool for tool in tool_manifest() if tool["name"] == "handoff_to_agent"]
 
 
+def specialist_tools() -> list[dict[str, Any]]:
+    """What the specialist can do; the hand-off is intake's and is not carried over."""
+    return [tool for tool in tool_manifest() if tool["name"] != "handoff_to_agent"]
+
+
 def tool_manifest() -> list[dict[str, Any]]:
+    """Every tool the call can use, for the full-call cases' fixtures."""
     date_of_birth = {"type": "string",
                      "description": "The patient's date of birth, ISO 8601 (YYYY-MM-DD)."}
     return [
@@ -78,9 +96,9 @@ def tool_manifest() -> list[dict[str, Any]]:
             "description": (
                 "Pass the call to the scheduling specialist. Before calling it, read the "
                 "name, date of birth and reason back to the caller and wait for them to "
-                "confirm, even when they gave "
-                "everything in their first sentence. Supply the confirmed details. Returns "
-                "handoff_complete when the specialist has the call."
+                "confirm, even when they gave everything in their first sentence. Supply the "
+                "confirmed details. Returns handoff_complete when the specialist will take "
+                "the call next."
             ),
             "parameters": {
                 "type": "object",
@@ -152,10 +170,11 @@ class HandoffState:
     details: dict[str, str] = field(default_factory=dict)
     summary: str = ""
     handed_off: bool = False
+    passed: bool = False
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def handoff(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Validate the handover and record it. Raises on an incomplete or malformed call, so
+        """Validate the hand-off and record it. Raises on an incomplete or malformed call, so
         nothing changes on the call until the details are right."""
         if set(args) != {"summary", "details", "caller_confirmed"}:
             raise ValueError("handoff requires: caller_confirmed, details, summary")
@@ -172,18 +191,22 @@ class HandoffState:
         self.summary = summary.strip()
         self.handed_off = True
         self.events.append({"type": "handoff", "summary": self.summary, "details": details})
-        return {
-            "handoff_complete": True,
-            "note": (f"The intake step is finished. You are now the scheduling specialist on "
-                     f"this same call. The patient is {details['name']}."),
-        }
+        return {"handoff_complete": True}
 
-    async def handoff_on(self, session: DialtSession, args: dict[str, Any]) -> dict[str, Any]:
-        """The host side of the tool: validate, declare the specialist's tools, switch the
-        session voice, then confirm. Both apply from the next reply, the specialist's first
-        line."""
-        result = self.handoff(args)
-        if not result.get("duplicate"):
-            await session.set_tools(tool_manifest())
-            await session.set_voice(self.specialist_voice)
-        return result
+    def handover_note(self) -> str:
+        """The host's note that makes the specialist speak first: who was passed and why."""
+        return (f"Intake has just passed the caller to you on this same call. Patient: "
+                f"{self.details['name']}, date of birth {self.details['date_of_birth']}. "
+                f"Reason: {self.summary}")
+
+    async def pass_call_on(self, session: DialtSession) -> dict[str, Any]:
+        """Pass the live call to the specialist once intake's hand-off turn has closed
+        (`HandoffBoundary` says when). Returns the broker's acknowledgement of the note."""
+        if not self.handed_off:
+            raise RuntimeError("the hand-off has not landed")
+        ack = await pass_call_to(
+            session, instructions=specialist_instructions(), tools=specialist_tools(),
+            voice=self.specialist_voice, note=self.handover_note())
+        self.passed = True
+        self.events.append({"type": "passed", "accepted": bool(ack.get("accepted"))})
+        return ack

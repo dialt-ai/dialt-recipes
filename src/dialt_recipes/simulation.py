@@ -447,6 +447,10 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                             "completed" if side == "target" else "simulator_ended")
                         stop.set()
                 elif event.type == "error":
+                    if event.data.get("retryable"):
+                        # A refused frame the host may resend (a pass landing on a reply still
+                        # in flight, a busy injection) is recorded, not the end of the call.
+                        continue
                     report.termination_reason = "connection_error"
                     report.error = str(event.data.get("detail") or event.data.get("code") or "error")
                     stop.set()

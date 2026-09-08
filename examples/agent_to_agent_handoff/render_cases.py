@@ -8,7 +8,8 @@ and the caller says goodbye, so the judge sees a complete intake and nothing els
 honest hosted and CLI runs of the intake persona. `evals/full_call/` declares every tool and
 runs the whole call; they are for host.py, which starts with the intake manifest and swaps in
 the specialist's tools when the hand-off lands. They are host.py-only by construction: run
-through dialt-sim or hosted, the same fixed result ends the call at the hand-off.
+through dialt-sim or hosted, the same fixed result ends the call at the hand-off. Both sets start
+with intake's instructions; the specialist's arrive with the pass and are never in a case.
 """
 import json
 import shutil
@@ -45,10 +46,9 @@ MOVED = {"result": {"rescheduled": True, "appointment_id": "A-2041", "date": "20
 # note closes the call cleanly after the hand-off so the intake judge sees a complete
 # intake and nothing else; host.py uses the live hand-off and never sees it.
 HANDOFF_FIXED = {"result": {"handoff_complete": True,
-                            "note": "The intake step is finished. This run covers the intake "
-                                    "step only: the specialist's tools are not available. Tell "
-                                    "the caller the specialist now has the call, then end the "
-                                    "call."}}
+                            "note": "This run covers the intake step only: no specialist "
+                                    "follows. Tell the caller you are passing them over, then "
+                                    "end the call."}}
 LIMITS = {"timeout_s": 240, "silence_s": 35}
 DUE_DATE = r"(?:21st|twenty[- ]first|21)"
 HANG_UP_AT_HANDOFF = (" Do not invent tool results or speak for the assistant. When the "
@@ -61,7 +61,7 @@ def case(name, starter, simulator, checks, *, tools, fixtures, max_turns):
         "name": name,
         "starter": starter,
         "target": {
-            "instructions": workflow.instructions(),
+            "instructions": workflow.intake_instructions(),
             "voice": workflow.DEFAULT_INTAKE_VOICE,
             "greeting": workflow.GREETING,
             "tools": tools,
@@ -152,9 +152,10 @@ FULL = {
                 "Before the handoff the assistant took the patient's name, date of birth and "
                 "reason and read them back. After the handoff it did not ask for those details "
                 "again, looked the patient up, answered the appointment-date question, and only "
-                "reported the appointment as moved after reschedule_appointment confirmed it. At "
-                "no point did it describe the hand-off as connecting or transferring the caller "
-                "to anyone else."},
+                "reported the appointment as moved after reschedule_appointment confirmed it. The "
+                "specialist's first words were its own opening to the caller, not a continuation "
+                "of intake's hand-off sentence, and it never said it was connecting or "
+                "transferring the caller to anyone."},
         ]),
     "caller_asks_for_a_person.json": full_case(
         "the caller asks for a person and the specialist reads out the appointment",
