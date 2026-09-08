@@ -1,13 +1,12 @@
-"""Run full-call cases locally with the real host behaviour: intake starts with only the
-hand-off tool declared, and when `handoff_to_agent` lands the host declares the specialist's
-tools and switches the voice on the live target session. Each run confirms the switch from the
-session's own `voice` event.
+"""Run full-call cases locally with the real host behaviour: the session starts as intake with
+only the hand-off tool declared; when `handoff_to_agent` lands the host resolves it, waits for
+intake's turn to close, then passes the call (`HandoffState.pass_call_on`): the specialist's
+instructions, tools and voice, and a note that makes it speak first. Each run confirms the
+voice switch from the session's own `voice` event and that the note was accepted.
 
     uv run python -u examples/agent_to_agent_handoff/host.py [CASE_OR_DIR ...]
 
-Defaults to `evals/full_call`. `DIALT_MODALITY` selects voice (default) or text; the broker
-applies `set_tools` and `set_voice` on both paths, and this run is the check that the swap
-actually happened.
+Defaults to `evals/full_call`. `DIALT_MODALITY` selects voice (default) or text.
 """
 from __future__ import annotations
 
@@ -20,24 +19,36 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from dialt_recipes import SimulationReport, run_simulation
+from dialt_recipes import HandoffBoundary, SimulationReport, run_simulation
 from dialt_recipes.cli import _credentials, collect_cases
 
-from workflow import HandoffState, intake_tools
+from workflow import HandoffState, intake_instructions, intake_tools
 
 
 async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, dict]:
-    state = HandoffState()
+    state, boundary = HandoffState(), HandoffBoundary()
+    acks: list[dict] = []
 
-    async def handoff(args, session):
-        return await state.handoff_on(session, args)
+    def handoff(args):
+        result = state.handoff(args)
+        boundary.landed = True
+        return result
+
+    async def on_target_event(event, session):
+        phase = boundary.observe(event)
+        if phase == "pass":
+            acks.append(await state.pass_call_on(session))
+        elif phase == "release":
+            await state.release_on(session)
 
     case = replace(
         case,
-        target={**case.target, "voice": state.intake_voice, "tools": intake_tools()},
+        target={**case.target, "instructions": intake_instructions(),
+                "voice": state.intake_voice, "tools": intake_tools()},
         fixtures={**case.fixtures, "handoff_to_agent": handoff},
     )
-    report: SimulationReport = await run_simulation(url, api_key, case, modality=modality)
+    report: SimulationReport = await run_simulation(url, api_key, case, modality=modality,
+                                                    on_target_event=on_target_event)
     switched = any(
         event.get("side") == "target" and event.get("type") == "voice"
         and event.get("voice") == state.specialist_voice
@@ -48,6 +59,9 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
     application_checks = [
         {"type": "application_state", "name": "intake handed off with complete details",
          "pass": state.handed_off, "detail": "" if state.handed_off else "no handoff"},
+        {"type": "application_state", "name": "the call was passed and the specialist's note accepted",
+         "pass": bool(acks) and all(a.get("accepted") for a in acks),
+         "detail": "" if acks else "the hand-off turn never closed"},
         {"type": "application_state", "name": f"session voice switched to {state.specialist_voice}",
          "pass": switched,
          "detail": "" if switched else ("no voice event confirmed the switch: is the key on the "
@@ -57,7 +71,7 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
     return passed, {
         "case": case.name, "modality": modality, "passed": passed,
         "termination_reason": report.termination_reason, "error": report.error,
-        "handoff": {"summary": state.summary, "details": state.details},
+        "handoff": {"summary": state.summary, "details": state.details, "events": state.events},
         "checks": [*application_checks, *report.check_results],
         "transcript": report.transcript,
         "session_ids": {"target": report.target_session_id,
