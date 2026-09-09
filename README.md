@@ -36,12 +36,12 @@ cp .env.example .env
 ## Agent-to-agent hand-off on one call
 
 [`examples/agent_to_agent_handoff`](examples/agent_to_agent_handoff) puts two agents on one
-call: an obviously synthetic intake voice takes the patient's details and calls a hand-off tool;
-when its turn closes, the host passes the call with `pass_call_to` (the specialist's
-instructions with `new_speaker`, its tools, its voice, and a note that makes it speak first).
-The broker folds the call so far into a transcript the specialist holds, so it never continues
-intake's sentences. A clinic appointment line is the worked example, with eval cases rendered
-from the workflow, a local host that confirms the pass, and a Twilio wiring sketch.
+call: an obviously synthetic intake voice takes the patient's details and calls a hand-off tool.
+After the tool result is sent, the host uses `handoff_agent` to atomically apply the specialist's
+instructions, tools, voice and incoming context. The broker owns the outgoing-turn boundary and
+folds the call so far into a transcript the specialist holds, so it never continues intake's
+sentences. A clinic appointment line is the worked example, with eval cases rendered from the
+workflow, a local host that confirms the pass, and a Twilio wiring sketch.
 
 ## Policy agent beside the call
 

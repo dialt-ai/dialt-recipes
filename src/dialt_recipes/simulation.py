@@ -32,6 +32,18 @@ def turn_root(turn_id) -> str | None:
     return _TURN_SUFFIX.sub("", turn_id)
 
 
+def _complete_text_relay(relay: TextTurnRelay, event: SessionEvent) -> None:
+    """Flush only completed text replies, not a client-tool bridge's cover line.
+
+    The following final utterance replaces the relay's pending bridge text and its ``done``
+    flushes that final to the other simulated participant. This is deliberately side-agnostic:
+    either participant can use a client tool.
+    """
+    if str(event.data.get("turn_id") or "").endswith("-bridge"):
+        return
+    relay.done()
+
+
 def assistant_turns(transcript: list[dict]) -> int:
     """Conversational assistant turns: entries sharing a turn root count once."""
     roots, count = set(), 0
@@ -272,17 +284,23 @@ async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[st
 
 
 Observer = Callable[[SessionEvent, DialtSession], Awaitable[None]]
+ToolResultObserver = Callable[[str, dict[str, Any], Any, str, bool, DialtSession], Awaitable[None]]
 
 
 async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                          modality: str = "text",
-                         on_target_event: Observer | None = None) -> SimulationReport:
+                         on_target_event: Observer | None = None,
+                         on_target_tool_result: ToolResultObserver | None = None) -> SimulationReport:
     """Run target and simulated user as two ordinary Dialt sessions.
 
     ``on_target_event(event, session)`` sees every event from the target session as it
     arrives, with the live session, so a host-side component that watches the call and acts on
     it (a policy monitor injecting context, a recorder) runs against the simulation exactly as
     it would on a real call. An exception from it ends the run as an error.
+
+    ``on_target_tool_result`` runs in a tracked background task after a target tool result has
+    been sent. It is for host work that can wait, such as an acknowledged agent hand-off;
+    receive and relay processing continue while it waits.
 
     In voice mode each session gets a virtual microphone into the other: a paced stream that
     runs for the whole call, carrying the other side's audio at real time and line noise in
@@ -317,6 +335,27 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
     target_turn_roots: set[str] = set()
     last_speaker = {"side": None}    # who spoke last: a silence is the other side's to explain
     repetition = {"text": "", "count": 0}
+    observer_tasks: set[asyncio.Task[None]] = set()
+
+    def start_tool_result_observer(name: str, args: dict[str, Any], value: Any, outcome: str,
+                                   verified: bool, session: DialtSession) -> None:
+        if on_target_tool_result is None:
+            return
+
+        async def observe() -> None:
+            try:
+                await on_target_tool_result(name, args, value, outcome, verified, session)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - the observer is the host's code
+                if not stop.is_set():
+                    report.termination_reason = "observer_error"
+                    report.error = f"on_target_tool_result: {exc!r}"[:4000]
+                    stop.set()
+
+        task = asyncio.create_task(observe())
+        observer_tasks.add(task)
+        task.add_done_callback(observer_tasks.discard)
 
     async def forward_text(destination: DialtSession, text: str) -> None:
         normalized = " ".join(text.casefold().split())
@@ -406,7 +445,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                 elif event.type == "audio" and modality == "voice" and event.audio is not None:
                     await voice_relays[side].audio(event.audio)
                 elif event.type == "done" and modality == "text":
-                    relays[side].done()
+                    _complete_text_relay(relays[side], event)
                 elif event.type == "interrupted" and modality == "voice":
                     # This side's reply was barged: report how much of its audio the other side
                     # never heard, so its committed text is truncated to match.
@@ -422,6 +461,8 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                         report.fixture_state, session=source,
                     )
                     await source.send_tool_result(call_id, value, outcome=outcome, verified=verified)
+                    start_tool_result_observer(tool_name, event.data.get("args") or {}, value,
+                                               outcome, verified, source)
                     fixture = case.fixtures.get(tool_name)
                     if len(report.events) < 2000:
                         report.events.append({
@@ -491,7 +532,10 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
     finally:
         for task in tasks:
             task.cancel()
+        for task in observer_tasks:
+            task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*observer_tasks, return_exceptions=True)
         await asyncio.gather(*(relay.close() for relay in relays.values()))
         await asyncio.gather(*(relay.close() for relay in voice_relays.values()))
         await asyncio.gather(target.close(), simulator.close(), return_exceptions=True)

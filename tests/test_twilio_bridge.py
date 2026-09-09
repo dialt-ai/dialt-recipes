@@ -44,6 +44,16 @@ def test_settings_urls() -> None:
     assert SETTINGS.websocket_url("/media") == "wss://voice.example.com/media"
 
 
+def test_bridge_hooks_keeps_end_call_in_its_existing_positional_slot() -> None:
+    end_call = asyncio.Event()
+
+    async def execute_tool(name, args):
+        return {}
+
+    hooks = bridge.BridgeHooks(execute_tool, None, None, end_call)
+    assert hooks.end_call is end_call and hooks.on_tool_result is None
+
+
 def test_connect_stream_twiml_carries_prelude_and_stream_urls() -> None:
     twiml = bridge.connect_stream_twiml(SETTINGS, prelude="<Play>https://x/ring.wav</Play>")
     assert twiml.index("<Play>") < twiml.index("<Connect>")
