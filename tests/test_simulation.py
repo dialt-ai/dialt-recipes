@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 
 import pytest
+from dialt.relay import TextTurnRelay
 
 from dialt_recipes.cli import collect_cases, push
 from dialt_recipes.simulation import (
     SimulationCase,
     assistant_turns,
+    _complete_text_relay,
     SimulationReport,
     _fixture_result,
     evaluate_checks,
@@ -15,6 +17,75 @@ from dialt_recipes.simulation import (
 )
 
 SAMPLE = Path(__file__).resolve().parents[1] / "examples/simulations/appointment_booking.json"
+
+
+@pytest.mark.parametrize("side", ["target", "simulator"])
+def test_text_relay_withholds_a_tool_bridge_until_its_final_for_either_side(side):
+    """A bridge is cover while a tool is unresolved, so it cannot prompt the other agent.
+
+    The later final replaces the pending bridge before the one relay flush. A plain completed
+    reply still flushes immediately.
+    """
+    class Relay:
+        def __init__(self):
+            self.pending = None
+            self.forwarded = []
+
+        def utterance(self, text):
+            self.pending = text
+
+        def done(self):
+            self.forwarded.append(self.pending)
+
+    from types import SimpleNamespace
+
+    relay = Relay()
+    bridge = SimpleNamespace(data={"turn_id": f"{side}-tool-bridge"})
+    final = SimpleNamespace(data={"turn_id": f"{side}-tool-final"})
+    ordinary = SimpleNamespace(data={"turn_id": f"{side}-ordinary"})
+
+    relay.utterance("I will check that.")
+    _complete_text_relay(relay, bridge)
+    assert relay.forwarded == []
+    relay.utterance("Your appointment is September 21.")
+    _complete_text_relay(relay, final)
+    assert relay.forwarded == ["Your appointment is September 21."]
+    relay.utterance("Anything else?")
+    _complete_text_relay(relay, ordinary)
+    assert relay.forwarded == ["Your appointment is September 21.", "Anything else?"]
+
+
+def test_text_relay_keeps_a_tool_bridge_pending_across_the_idle_gate():
+    """Only the final completion flushes after tool work settles."""
+    from types import SimpleNamespace
+
+    async def run():
+        forwarded, delivered = [], asyncio.Event()
+
+        async def forward(text):
+            forwarded.append(text)
+            delivered.set()
+
+        relay = TextTurnRelay(forward, settle_s=0)
+        bridge = SimpleNamespace(data={"turn_id": "turn-1-bridge"})
+        final = SimpleNamespace(data={"turn_id": "turn-1-final"})
+        relay.working(True)
+        relay.utterance("I will check that.")
+        _complete_text_relay(relay, bridge)
+        relay.working(False)
+        assert forwarded == []
+
+        relay.working(True)
+        relay.utterance("Your appointment is September 21.")
+        _complete_text_relay(relay, final)
+        await asyncio.sleep(0)  # Let the zero-settle relay reach its active-work gate.
+        assert forwarded == []
+        relay.working(False)
+        await asyncio.wait_for(delivered.wait(), timeout=1)
+        assert forwarded == ["Your appointment is September 21."]
+        await relay.close()
+
+    asyncio.run(run())
 
 
 def test_case_uses_the_hosted_document_shape():

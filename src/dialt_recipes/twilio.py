@@ -42,6 +42,7 @@ MAX_MULAW_FRAME_BYTES = 4_096
 
 EventHook = Callable[[Any], Awaitable[None]]
 ToolHook = Callable[[str, dict[str, Any]], Awaitable[Any]]
+ToolResultHook = Callable[[str, dict[str, Any], Any, str, bool, DialtSession], Awaitable[None]]
 SessionHook = Callable[[DialtSession], Awaitable[None]]
 
 
@@ -155,6 +156,9 @@ class BridgeHooks:
         (transcripts, tool timing, permission outcomes). Must not block for long.
     on_connected(session): once the Dialt session is open, before audio flows (start a
         recording, inject context).
+    on_tool_result(name, args, result, outcome, verified, session): runs after the bridge has
+        sent a tool result. It runs in that tool's task, so a server-acknowledged follow-up does
+        not block event or media processing.
     end_call: an event the host sets to end the call itself; the bridge closes the Dialt
         session, drains playback and returns. Dialt's own end_call needs nothing from the host.
     """
@@ -163,6 +167,7 @@ class BridgeHooks:
     on_event: EventHook | None = None
     on_connected: SessionHook | None = None
     end_call: asyncio.Event | None = None
+    on_tool_result: ToolResultHook | None = None
 
 
 async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
@@ -214,6 +219,12 @@ async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
                     result = {"error": "tool_failed", "detail": str(exc) or type(exc).__name__}
                     outcome, verified = "failed", False
                 await session.send_tool_result(tool_id, result, outcome=outcome, verified=verified)
+                if hooks.on_tool_result is not None:
+                    try:
+                        await hooks.on_tool_result(name, args, result, outcome, verified, session)
+                    except Exception:  # The terminal result is already delivered; never send another.
+                        logger.exception("Dialt post-tool hook failed tool=%s call_sid=%s",
+                                         name, call_sid)
             except asyncio.CancelledError:
                 return
             finally:

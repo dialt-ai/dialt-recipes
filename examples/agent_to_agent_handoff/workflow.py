@@ -5,10 +5,10 @@ The example is a clinic appointment line. Intake is an obviously synthetic voice
 the patient's name, date of birth and reason for calling, reads them back, and calls
 `handoff_to_agent` once the caller confirms. The host validates and resolves the tool; intake
 finishes its own turn. When that turn has closed, the host passes the call
-(`HandoffState.pass_call_on`, built on `dialt_recipes.pass_call_to`): the specialist's
-instructions replace intake's, the broker folds the call so far into a transcript the
-specialist holds, the specialist's tools and voice are declared, and a short note makes it
-speak first. Each agent has its own instructions; neither is told about the other's rules.
+(`HandoffState.pass_call_on`): the broker atomically folds the call so far into a transcript
+the specialist holds and applies the specialist's instructions, tools and voice. A short
+acknowledged note then makes it speak first. Each agent has its own instructions; neither is
+told about the other's rules.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from dialt import DialtSession
-from dialt_recipes import ConversationPlan, PlanField, pass_call_to
+from dialt_recipes import ConversationPlan, HANDOFF_COMPLETE_CONTEXT, PlanField, pass_call_to
 
 DEFAULT_INTAKE_VOICE = "chime"
 DEFAULT_SPECIALIST_VOICE = "southern_us_female"
@@ -33,9 +33,7 @@ INTAKE_PLAN = ConversationPlan(
     completion="When you have all three, read them back in one sentence and ask the caller "
                "if that is right. Call handoff_to_agent only after the caller confirms, even "
                "when they gave everything at once. The specialist is the next step of this "
-               "same call, so no permission to transfer is needed. When the tool result "
-               "reports handoff_complete, tell the caller you are passing them to the "
-               "specialist and stop there: the specialist speaks next.",
+               "same call, so no permission to transfer is needed.",
     record_as_you_go=False,
 )
 
@@ -94,11 +92,13 @@ def tool_manifest() -> list[dict[str, Any]]:
         {
             "name": "handoff_to_agent",
             "description": (
-                "Pass the call to the scheduling specialist. Before calling it, read the "
+                "Request a transfer to the scheduling specialist. It returns handoff_requested "
+                "when intake has requested the transfer, not when the specialist has the call. "
+                "After that result, finish your turn naturally with transfer intent, without "
+                "claiming the transfer completed. Before calling it, read the "
                 "name, date of birth and reason back to the caller and wait for them to "
                 "confirm, even when they gave everything in their first sentence. Supply the "
-                "confirmed details. Returns handoff_complete when the specialist will take "
-                "the call next."
+                "confirmed details."
             ),
             "parameters": {
                 "type": "object",
@@ -170,7 +170,6 @@ class HandoffState:
     details: dict[str, str] = field(default_factory=dict)
     summary: str = ""
     handed_off: bool = False
-    passed: bool = False
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def handoff(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -186,12 +185,12 @@ class HandoffState:
         if not isinstance(summary, str) or not summary.strip():
             raise ValueError("summary must be non-empty text")
         if self.handed_off:
-            return {"handoff_complete": True, "duplicate": True}
+            return {"handoff_requested": True, "duplicate": True}
         self.details = details
         self.summary = summary.strip()
         self.handed_off = True
         self.events.append({"type": "handoff", "summary": self.summary, "details": details})
-        return {"handoff_complete": True}
+        return {"handoff_requested": True}
 
     def handover_note(self) -> str:
         """The host's note that makes the specialist speak first: who was passed and why."""
@@ -200,20 +199,28 @@ class HandoffState:
                 f"Reason: {self.summary}")
 
     async def pass_call_on(self, session: DialtSession) -> dict[str, Any]:
-        """Pass the live call to the specialist once intake's hand-off turn has closed
-        (`HandoffBoundary` says when). The specialist's first turn must be the patient lookup:
-        every rule it has depends on the record, and left to itself the model sometimes spoke
-        appointment facts it had never fetched. Returns the broker's acknowledgement of the note."""
+        """Pass the live call once its tool result has been sent.
+
+        The server owns the outgoing-turn boundary and awaits its acknowledgement. The
+        specialist's first turn must be the patient lookup: every rule it has depends on the
+        record, and left to itself the model sometimes spoke appointment facts it had not fetched.
+        """
         if not self.handed_off:
             raise RuntimeError("the hand-off has not landed")
-        ack = await pass_call_to(
+        result = await pass_call_to(
             session, instructions=specialist_instructions(), tools=specialist_tools(),
-            voice=self.specialist_voice, note=self.handover_note(), first_tool="lookup_patient")
-        self.passed = True
-        self.events.append({"type": "passed", "accepted": bool(ack.get("accepted"))})
-        return ack
-
-    async def release_on(self, session: DialtSession) -> None:
-        """The specialist's first reply has closed: tool use is the model's own choice again."""
-        await session.set_tool_choice("auto")
-        self.events.append({"type": "released"})
+            voice=self.specialist_voice, context=self.handover_note(), opener=None,
+        )
+        if result["switched"]:
+            # Existing recipe evidence requires the specialist's first action to be the lookup.
+            await session.set_tool_choice({"tool": "lookup_patient"}, one_shot=True)
+            try:
+                reply = await session.inject_context(HANDOFF_COMPLETE_CONTEXT, role="context", reply=True)
+            except Exception as exc:  # The specialist remains applied if the optional opener fails.
+                result["opener_error"] = str(exc) or type(exc).__name__
+            else:
+                result["reply"] = reply
+                result["reply_started"] = bool(reply.get("reply_started"))
+        self.events.append({"type": "passed", "accepted": result["switched"],
+                            "reply_accepted": bool(result["reply"] and result["reply"].get("accepted"))})
+        return result

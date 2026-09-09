@@ -1,8 +1,8 @@
 """Run full-call cases locally with the real host behaviour: the session starts as intake with
-only the hand-off tool declared; when `handoff_to_agent` lands the host resolves it, waits for
-intake's turn to close, then passes the call (`HandoffState.pass_call_on`): the specialist's
-instructions, tools and voice, and a note that makes it speak first. Each run confirms the
-voice switch from the session's own `voice` event and that the note was accepted.
+only the hand-off tool declared; after `handoff_to_agent`'s result is sent, the host requests an
+acknowledged server-owned pass (`HandoffState.pass_call_on`). The specialist's instructions,
+tools and voice are applied atomically; then a one-shot lifecycle trigger asks it to speak. Each
+run checks the public handoff acknowledgement that confirms the handoff applied.
 
     uv run python -u examples/agent_to_agent_handoff/host.py [CASE_OR_DIR ...]
 
@@ -19,27 +19,22 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from dialt_recipes import HandoffBoundary, SimulationReport, run_simulation
+from dialt_recipes import SimulationReport, run_simulation
 from dialt_recipes.cli import _credentials, collect_cases
 
 from workflow import HandoffState, intake_instructions, intake_tools
 
 
 async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, dict]:
-    state, boundary = HandoffState(), HandoffBoundary()
+    state = HandoffState()
     acks: list[dict] = []
 
     def handoff(args):
-        result = state.handoff(args)
-        boundary.landed = True
-        return result
+        return state.handoff(args)
 
-    async def on_target_event(event, session):
-        phase = boundary.observe(event)
-        if phase == "pass":
+    async def on_target_tool_result(name, args, result, outcome, verified, session):
+        if name == "handoff_to_agent" and outcome == "succeeded" and verified:
             acks.append(await state.pass_call_on(session))
-        elif phase == "release":
-            await state.release_on(session)
 
     case = replace(
         case,
@@ -48,24 +43,15 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
         fixtures={**case.fixtures, "handoff_to_agent": handoff},
     )
     report: SimulationReport = await run_simulation(url, api_key, case, modality=modality,
-                                                    on_target_event=on_target_event)
-    switched = any(
-        event.get("side") == "target" and event.get("type") == "voice"
-        and event.get("voice") == state.specialist_voice
-        for event in report.events
-    )
+                                                    on_target_tool_result=on_target_tool_result)
     expects_handoff = any(check.get("type") == "tool_called"
                           and check.get("value") == "handoff_to_agent" for check in case.checks)
     application_checks = [
         {"type": "application_state", "name": "intake handed off with complete details",
          "pass": state.handed_off, "detail": "" if state.handed_off else "no handoff"},
-        {"type": "application_state", "name": "the call was passed and the specialist's note accepted",
-         "pass": bool(acks) and all(a.get("accepted") for a in acks),
+        {"type": "application_state", "name": "the call was passed to the specialist",
+         "pass": bool(acks) and all(a["switched"] for a in acks),
          "detail": "" if acks else "the hand-off turn never closed"},
-        {"type": "application_state", "name": f"session voice switched to {state.specialist_voice}",
-         "pass": switched,
-         "detail": "" if switched else ("no voice event confirmed the switch: is the key on the "
-                                        "roster, and different from the intake voice?")},
     ] if expects_handoff else []
     passed = report.passed and all(check["pass"] for check in application_checks)
     return passed, {

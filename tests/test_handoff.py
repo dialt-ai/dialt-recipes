@@ -1,68 +1,53 @@
-from dialt import SessionEvent
+import asyncio
 
-from dialt_recipes import HandoffBoundary
-
-
-def _ev(type_, **data):
-    return SessionEvent(type=type_, t_ms=0.0, data=data)
+from dialt_recipes import pass_call_to
 
 
-def _phases(events, landed_after):
-    """(index, phase) for every event the boundary acts on, with `landed` set after
-    `landed_after` events."""
-    boundary = HandoffBoundary()
-    out = []
-    for index, event in enumerate(events):
-        if index == landed_after:
-            boundary.landed = True
-        phase = boundary.observe(event)
-        if phase:
-            out.append((index, phase))
-    return out
+def test_pass_call_to_can_handoff_agents_sequentially() -> None:
+    class Session:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def handoff_agent(self, **kwargs):
+            self.calls.append(("handoff_agent", kwargs))
+            return {"accepted": True, "status": "applied"}
+
+        async def inject_context(self, note, *, role, reply):
+            self.calls.append(("inject_context", note, role, reply))
+            return {"accepted": True}
+
+    session = Session()
+    asyncio.run(pass_call_to(session, instructions="first", tools=[], voice="one", context="one",
+                             operation_id="one"))
+    asyncio.run(pass_call_to(session, instructions="second", tools=[], voice="two", context="two",
+                             operation_id="two"))
+    assert [call[0] for call in session.calls] == [
+        "handoff_agent", "inject_context", "handoff_agent", "inject_context"]
+    assert session.calls[2][1]["operation_id"] == "two"
+    assert session.calls[0][1]["context"] == "one"
 
 
-FIRST_REPLY = [_ev("working", active=True), _ev("turn", turn_id="s-bridge"),
-               _ev("done", turn_id="s-bridge"), _ev("turn", turn_id="s-final"),
-               _ev("working", active=False), _ev("done", turn_id="s-final")]
+def test_pass_call_to_does_not_inject_after_rejection() -> None:
+    class Session:
+        async def handoff_agent(self, **kwargs):
+            return {"accepted": False}
+
+        async def inject_context(self, *args, **kwargs):
+            raise AssertionError("rejected handoff must not request a reply")
+
+    assert asyncio.run(pass_call_to(Session(), instructions="next", tools=[], context="hello")) == {
+        "accepted": False, "status": "rejected", "switched": False,
+        "handoff": {"accepted": False}, "reply": None, "reply_started": False}
 
 
-def test_bridge_then_answer_passes_on_the_answers_done_and_releases_after_the_first_reply():
-    events = [_ev("working", active=True), _ev("tool_call", id="fc1"),
-              _ev("turn", turn_id="t-bridge"), _ev("done", turn_id="t-bridge"),
-              _ev("turn", turn_id="t-final"), _ev("working", active=False),
-              _ev("done", turn_id="t-final"), *FIRST_REPLY, _ev("done", turn_id="later")]
-    assert _phases(events, landed_after=2) == [(6, "pass"), (12, "release")]
+def test_opener_exception_does_not_hide_an_applied_handoff() -> None:
+    class Session:
+        async def handoff_agent(self, **kwargs):
+            return {"accepted": True, "status": "applied"}
 
+        async def inject_context(self, *args, **kwargs):
+            raise RuntimeError("connection closed")
 
-def test_a_turn_that_closes_after_its_bridge_passes_when_the_wait_ends():
-    events = [_ev("working", active=True), _ev("tool_call", id="fc1"),
-              _ev("turn", turn_id="t-bridge"), _ev("done", turn_id="t-bridge"),
-              _ev("working", active=False), _ev("done", turn_id="later")]
-    assert _phases(events, landed_after=2) == [(4, "pass"), (5, "release")]
-
-
-def test_an_answer_without_a_bridge_waits_for_its_done_whichever_order_it_starts():
-    working_first = [_ev("working", active=True), _ev("tool_call", id="fc1"),
-                     _ev("working", active=False), _ev("turn", turn_id="t-final"),
-                     _ev("done", turn_id="t-final")]
-    turn_first = [_ev("working", active=True), _ev("tool_call", id="fc1"),
-                  _ev("turn", turn_id="t-final"), _ev("working", active=False),
-                  _ev("done", turn_id="t-final")]
-    assert _phases(working_first, landed_after=2) == [(4, "pass")]
-    assert _phases(turn_first, landed_after=2) == [(4, "pass")]
-
-
-def test_the_release_waits_for_a_whole_first_reply_not_its_bridge():
-    """A forced first tool makes the first reply a tool turn: bridge, then answer. The release
-    comes after the answer, while the tool wait covers the bridge's done."""
-    pass_then_reply = [_ev("done", turn_id="t"), *FIRST_REPLY]
-    assert _phases(pass_then_reply, landed_after=0) == [(0, "pass"), (6, "release")]
-
-
-def test_nothing_fires_before_the_handoff_lands_or_after_the_release():
-    events = [_ev("turn", turn_id="a"), _ev("done", turn_id="a"), _ev("done", turn_id="b")]
-    assert _phases(events, landed_after=99) == []
-    boundary = HandoffBoundary(landed=True)
-    assert boundary.observe(_ev("done", turn_id="a")) == "pass"
-    assert boundary.observe(_ev("done", turn_id="b")) == "release"
-    assert boundary.observe(_ev("done", turn_id="c")) is None
+    ack = asyncio.run(pass_call_to(Session(), instructions="next", tools=[], context="details"))
+    assert ack["accepted"] and ack["status"] == "applied" and ack["switched"]
+    assert ack["reply"] is None and ack["opener_error"] == "connection closed"

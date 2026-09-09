@@ -12,31 +12,24 @@ role texts for your own domain and the mechanics stay the same.
 The hand-off is a tool intake calls once the caller has confirmed the read-back:
 `handoff_to_agent(summary, details, caller_confirmed)`. The host validates it (a call with
 `caller_confirmed` false is refused, so a hand-off cannot land on an unconfirmed read-back) and
-returns `handoff_complete`. Intake finishes its own turn: it tells the caller it is passing them
+returns `handoff_requested`. Intake finishes its own turn: it tells the caller it is going to pass them
 over and stops.
 
-When that turn has closed, the host passes the call with `dialt_recipes.pass_call_to`, four
-frames on the same session:
+After the host sends the hand-off tool result, it calls `session.handoff_agent(...)`. The server
+waits for the outgoing turn, then atomically folds its history and applies the specialist's
+instructions, tools, voice and the handover note as incoming context. A caller who starts talking
+as that acknowledgement arrives therefore reaches an agent that already has the confirmed details.
 
-1. `set_instructions(specialist, new_speaker=True)`: the specialist's instructions replace
-   intake's, and the broker folds everything said so far into a transcript the specialist holds.
-   It reads intake's lines as a previous agent's, not as its own turns to continue.
-2. `set_tools(specialist_tools)`: the lookup and reschedule tools arrive; the hand-off tool does
-   not carry over.
-3. `set_tool_choice({"tool": "lookup_patient"})`: the specialist's first turn must be the
-   lookup. Every rule the specialist has depends on the record, and left to itself the model
-   sometimes stated appointment or account facts it had never fetched (loan-servicing dev runs,
-   2026-09-08). This is the API's own "the next turn must use this tool" contract, not a prompt
-   rule; the host sets it back to `"auto"` when the first reply has closed.
-4. `set_voice(specialist_voice)`: the voice changes from the specialist's first word.
-5. `inject_context(note, reply=True)`: the host's one-line note (who was passed, why) makes the
-   specialist speak first.
+This recipe keeps its existing one-shot `set_tool_choice({"tool": "lookup_patient"})` after an
+accepted switch: live evidence requires the specialist to look up the record before speaking
+about an appointment. It then calls `inject_context("The agent handoff is complete.", reply=True)`
+once. That is a lifecycle trigger, not prescribed spoken wording. If the caller has claimed the
+floor, its acknowledgement may be rejected; the handoff remains applied, the agent still has the
+note, and the host does not retry or infer idleness.
 
-The broker refuses the fold while a reply is in flight, so the pass has to land between replies.
-`dialt_recipes.HandoffBoundary` reads the session's own `turn`, `done` and `working` events and
-returns `"pass"` when intake's hand-off turn has closed, whether that turn spoke a bridge and an
-answer, closed after its bridge, or answered without a bridge, and `"release"` when the
-specialist's first reply has closed. `host.py` shows the wiring.
+The host records separate `handoff_applied` and `reply` outcomes. An opener rejection is never a
+reason to send another handoff, repeat the note, or attempt a second fold. `host.py` uses the
+post-tool-result simulation hook, so its acknowledgement wait does not block event relaying.
 
 Each agent has only its own instructions (`workflow.intake_instructions()`,
 `workflow.specialist_instructions()`). Neither is told the other's rules, and the prompt does
@@ -47,8 +40,8 @@ the second half of intake's "connecting you now" sentence, under intake's prompt
 invented account facts at the seam.
 
 Voices: `INTAKE_VOICE` (default `chime`) and `SPECIALIST_VOICE` (default `southern_us_female`)
-are roster keys. An unknown key is ignored by the server and the call carries on in the intake
-voice; `host.py` reports whether the session confirmed the switch.
+are roster keys. The handoff acknowledgement confirms that the atomic switch applied; use the
+recorded session's `prompt_config` when an audit needs the resolved voice configuration.
 
 ## What each agent is told
 
@@ -81,8 +74,8 @@ uv run dialt-evals push examples/agent_to_agent_handoff/evals/intake --modality 
 ```
 
 `evals/full_call/` declares every tool for its fixtures and runs the whole call. They are for
-`host.py`, which starts each one as intake, passes the call when the hand-off turn closes, and
-reports whether the pass was accepted and the voice confirmed:
+`host.py`, which starts each one as intake, requests the pass after its hand-off tool result is
+sent, and reports whether the public handoff acknowledgement says it applied:
 
 ```sh
 uv run python -u examples/agent_to_agent_handoff/host.py                # voice, the default
@@ -94,36 +87,27 @@ call, and their fixed hand-off result ends the call at the hand-off.
 
 ## On a phone call
 
-Reuse `examples/integrations/twilio`. Build the state and boundary per call, keep the session
-from `on_connected`, feed every event to the boundary from `on_event`, and route
-`handoff_to_agent` to `HandoffState.handoff`:
+Reuse `examples/integrations/twilio`. Build state per call and route `handoff_to_agent` to
+`HandoffState.handoff`. `BridgeHooks.on_tool_result` runs after the bridge has sent that result,
+in the tool task rather than its media/event loop:
 
 ```python
 def call_hooks():
-    """One HandoffState, one boundary and one live session per call; never share them."""
-    state, boundary, live = HandoffState(), HandoffBoundary(), {}
-
-    async def on_connected(session):
-        live["session"] = session
-
-    async def on_event(event):
-        phase = boundary.observe(event)
-        if phase == "pass":
-            await state.pass_call_on(live["session"])
-        elif phase == "release":
-            await state.release_on(live["session"])
+    """One HandoffState per call; never share it."""
+    state = HandoffState()
 
     async def execute_tool(name, args):
         if name == "handoff_to_agent":
-            result = state.handoff(args)
-            boundary.landed = True
-            return result
+            return state.handoff(args)
         ...
+
+    async def on_tool_result(name, args, result, outcome, verified, session):
+        if name == "handoff_to_agent" and outcome == "succeeded" and verified:
+            await state.pass_call_on(session)
 
     mode = DialtMode(voice=state.intake_voice, instructions=intake_instructions(),
                      tools=intake_tools(), greeting=GREETING)
-    return mode, BridgeHooks(execute_tool=execute_tool, on_connected=on_connected,
-                             on_event=on_event)
+    return mode, BridgeHooks(execute_tool=execute_tool, on_tool_result=on_tool_result)
 ```
 
 Because the pass happens inside the Dialt session, Twilio sees one uninterrupted media stream.
