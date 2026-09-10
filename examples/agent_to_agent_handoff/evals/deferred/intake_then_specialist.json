@@ -75,7 +75,6 @@
           "additionalProperties": false
         },
         "read_only": true,
-        "expected_duration": "seconds",
         "status_label": "patient lookup"
       },
       {
@@ -99,7 +98,6 @@
           ],
           "additionalProperties": false
         },
-        "expected_duration": "seconds",
         "status_label": "appointment change"
       }
     ]

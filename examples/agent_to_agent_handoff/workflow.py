@@ -132,7 +132,6 @@ def tool_manifest() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
             "read_only": True,
-            "expected_duration": "seconds",
             "status_label": "patient lookup",
         },
         {
@@ -153,7 +152,6 @@ def tool_manifest() -> list[dict[str, Any]]:
                 "required": ["appointment_id", "new_date"],
                 "additionalProperties": False,
             },
-            "expected_duration": "seconds",
             "status_label": "appointment change",
         },
     ]

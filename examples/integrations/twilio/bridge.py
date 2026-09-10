@@ -103,7 +103,6 @@ def tool_manifest() -> list[dict[str, Any]]:
             "additionalProperties": False,
         },
         "requires_permission": True,
-        "expected_duration": "seconds",
         "status_label": "human handoff",
     }]
 
