@@ -43,7 +43,7 @@
           ],
           "additionalProperties": false
         },
-        "expected_duration": "seconds",
+        "expected_duration": "instant",
         "status_label": "specialist handoff"
       }
     ],

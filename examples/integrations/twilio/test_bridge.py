@@ -142,7 +142,7 @@ def test_handoff_tool_is_optional_permissioned_and_has_no_destination(monkeypatc
     tool = manifest[0]
     assert tool["name"] == "request_human_handoff"
     assert tool["requires_permission"] is True
-    assert tool["expected_duration"] == "seconds"
+    assert "expected_duration" not in tool
     assert set(tool["parameters"]["properties"]) == {"reason", "summary"}
     assert tool["parameters"]["additionalProperties"] is False
 
