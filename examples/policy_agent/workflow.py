@@ -21,6 +21,7 @@ GREETING = "Hi, you've reached the clinic appointment line. How can I help?"
 
 POLICY: dict[str, Any] = {
     "subject": "a clinic appointment call",
+    "report_checks": True,
     "rules": [
         {
             "id": "emergency",
@@ -119,3 +120,25 @@ def session_mode(*, voice: str = DEFAULT_VOICE) -> dict[str, Any]:
     return {"kind": "dialt", "voice": voice, "instructions": INSTRUCTIONS,
             "tools": tool_manifest(), "greeting": GREETING, "end_call": True,
             "policy": POLICY}
+
+
+def extended_mode() -> dict[str, Any]:
+    """Optional occurrence tracking and identity protection using native policy controls."""
+    from copy import deepcopy
+    mode = deepcopy(session_mode())
+    policy = mode["policy"]
+    policy.update(recheck_corrections=True, batch_guidance=True,
+                  wait_for_check=["reschedule_appointment"],
+                  block_on_error=["reschedule_appointment"])
+    for rule in policy["rules"]:
+        if rule["id"] == "complaint":
+            rule["frequency"] = "once_per_turn"
+    policy["rules"].append({
+        "id": "identity_mismatch",
+        "when": "The caller explicitly says the patient record being discussed belongs to someone else. "
+                "A caller correcting the spelling of their own name is not this rule.",
+        "do": "Do not change that appointment. Clarify whose record is needed before proceeding.",
+        "action": "next_turn",
+        "block_tools": ["reschedule_appointment"],
+    })
+    return mode

@@ -388,7 +388,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dialt-sdk", specifier = ">=0.27.0" },
+    { name = "dialt-sdk", specifier = ">=0.28.0" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -401,16 +401,16 @@ dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "dialt-sdk"
-version = "0.27.0"
+version = "0.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f6/ba/cb4ac2a5b097bd7b3d5f058f958e49b2ae61690936805fd3ec7db1ff8238/dialt_sdk-0.27.0.tar.gz", hash = "sha256:b9a47ee9402f88059c31cbe67cec6f331ffadc8e530ba30eec438ad61f11e634", size = 51638, upload-time = "2026-09-09T11:59:30.427Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/fb/e45a9cd1b044bee9441c30aa24abd9ff1bc3b9221a5477835106f738e2da/dialt_sdk-0.28.0.tar.gz", hash = "sha256:a0e007c366173db97a46f7b0aac6860a976bfab6fb39c91844236ec3ea80b385", size = 62079, upload-time = "2026-09-12T13:21:00.612Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/b6/e6331f5cc237c7a9c4c5f8e01fae9e6eb6377bf57bd0531642e5788c6f93/dialt_sdk-0.27.0-py3-none-any.whl", hash = "sha256:61a87d3bab99245d8a4cb99182424a6998984aec48021a3850d887305ba867a5", size = 42205, upload-time = "2026-09-09T11:59:29.382Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/37/1ae7d056bcb9557675e9051fe6786e3d22ea787a2b7e8fc0e3937d3bbfc9/dialt_sdk-0.28.0-py3-none-any.whl", hash = "sha256:e71533a3f82113d56c873d4e1a6c27ed2dd5f21af6241e11cb635faef06acb25", size = 48802, upload-time = "2026-09-12T13:20:59.582Z" },
 ]
 
 [[package]]

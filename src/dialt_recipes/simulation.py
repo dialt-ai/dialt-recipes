@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 from dialt import DialtMode, DialtSession, SessionEvent
 from dialt.evals import EvalsError, validate_case
+from dialt.policy import PolicyEvidence
 from dialt.relay import (
     SIMULATION_SILENCE_END_S,
     SIMULATION_SILENCE_NUDGE_S,
@@ -165,6 +166,9 @@ def evaluate_checks(case: SimulationCase, report: SimulationReport) -> list[dict
         for event in report.events
         if event.get("side") == "target" and event.get("type") == "tool_call"
     }
+    policy_evidence = PolicyEvidence()
+    for event in report.events:
+        policy_evidence.record(event)
     for index, check in enumerate(case.checks):
         kind = check.get("type")
         name = check.get("name") or f"{kind}-{index + 1}"
@@ -187,6 +191,10 @@ def evaluate_checks(case: SimulationCase, report: SimulationReport) -> list[dict
                 detail = f"invalid regex: {exc}"
         elif kind == "tool_called":
             passed = value in called
+        elif kind == "tool_not_called":
+            passed = value not in called
+        elif kind == "policy_flag":
+            passed, detail = policy_evidence.evaluate(check)
         elif kind == "fixture_complete":
             fixture = case.fixtures.get(value, {})
             stored = report.fixture_state.get(value, {})
@@ -329,6 +337,10 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         raise
 
     report = SimulationReport(case.name, modality, target_id, simulator_id)
+    policy_evidence = PolicyEvidence()
+    policy_changed = asyncio.Event()
+    policy_checks = any(c.get("type") == "policy_flag" for c in case.checks)
+    attempt_started = time.monotonic()
     stop = asyncio.Event()
     last_activity = {"at": time.monotonic()}
     target_turns = {"count": 0}
@@ -394,10 +406,14 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         try:
             async for event in source.events():
                 last_activity["at"] = time.monotonic()
+                record = {"side": side, "type": event.type, "t_ms": event.t_ms, **event.data}
+                if policy_checks:
+                    policy_evidence.record(record)
+                    policy_changed.set()
                 if len(report.events) < 2000:
-                    report.events.append({
-                        "side": side, "type": event.type, "t_ms": event.t_ms, **event.data,
-                    })
+                    report.events.append(record)
+                elif len(report.events) == 2000:
+                    report.events.append({"type": "policy_evidence_overflow", "side": "target"})
                 if side == "target" and on_target_event is not None:
                     try:
                         await on_target_event(event, source)
@@ -406,11 +422,36 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                         report.error = f"on_target_event: {exc!r}"[:4000]
                         stop.set()
                         return
+                if side == "target" and event.type in {"asr", "asr_correction"}:
+                    source_id = event.data.get("utterance_id")
+                    if event.type == "asr":
+                        entry = {"role": "user", "text": event.data.get("text", "")}
+                        if source_id:
+                            entry["utterance_id"] = source_id
+                        report.transcript.append(entry)
+                    else:
+                        for turn in reversed(report.transcript):
+                            if turn.get("role") == "user" and (not source_id or turn.get("utterance_id") == source_id):
+                                turn["text"] = event.data.get("text", "")
+                                break
+                if stop.is_set():
+                    if side == "target" and event.type == "error":
+                        failure = {"type": "policy_error", "side": "target", "reason": "connection_error"}
+                        policy_evidence.record(failure)
+                        report.events.append(failure)
+                    elif side == "target" and event.type == "utterance" and event.data.get("text"):
+                        entry = {"role": "assistant", "text": event.data["text"]}
+                        root = turn_root(event.data.get("turn_id"))
+                        if root is not None:
+                            entry["turn"] = root
+                        last = report.transcript[-1] if report.transcript else None
+                        if event.data.get("corrected") and last and last.get("role") == "assistant" and last.get("turn") == root:
+                            report.transcript[-1] = entry
+                        else:
+                            report.transcript.append(entry)
+                    continue
                 if event.type == "asr":
-                    if side == "target":
-                        report.transcript.append({
-                            "role": "user", "text": event.data.get("text", ""),
-                        })
+                    pass
                 elif side == "target" and event.type == "utterance":
                     text = str(event.data.get("text") or "")
                     root = turn_root(event.data.get("turn_id"))
@@ -495,6 +536,11 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                     report.termination_reason = "connection_error"
                     report.error = str(event.data.get("detail") or event.data.get("code") or "error")
                     stop.set()
+            if side == "target" and policy_checks and not policy_evidence.complete:
+                failure = {"type": "policy_error", "side": "target", "reason": "connection_closed"}
+                policy_evidence.record(failure)
+                report.events.append(failure)
+                policy_changed.set()
             if not stop.is_set():
                 report.termination_reason = "connection_closed"
                 stop.set()
@@ -530,6 +576,17 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
             report.termination_reason = "timeout"
             stop.set()
     finally:
+        if policy_checks and report.termination_reason not in {"connection_error", "timeout", "observer_error"}:
+            await asyncio.gather(*(relay.close() for relay in relays.values()))
+            await asyncio.gather(*(relay.close() for relay in voice_relays.values()))
+            remaining = max(0.0, case.timeout_s - (time.monotonic() - attempt_started))
+            try:
+                async with asyncio.timeout(min(remaining, 55.0)):
+                    while not policy_evidence.complete and not policy_evidence.failed:
+                        policy_changed.clear()
+                        await policy_changed.wait()
+            except TimeoutError:
+                pass
         for task in tasks:
             task.cancel()
         for task in observer_tasks:

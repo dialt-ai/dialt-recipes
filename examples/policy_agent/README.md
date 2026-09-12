@@ -20,8 +20,7 @@ mode = {"kind": "dialt", "instructions": ..., "tools": ..., "policy": {
 `workflow.py` has the full rules. Each names what to look for (`when`), what the agent is told
 when it applies (`do`), and how that lands (`action`):
 
-- `speak_now`: the instruction is injected and the agent speaks to it at once, without waiting
-  for the caller. For the emergency rule: tell the caller to hang up and call emergency
+- `speak_now`: the instruction is injected and a reply is requested when the floor is available. For the emergency rule: tell the caller to hang up and call emergency
   services, then end the call.
 - `next_turn`: the instruction is injected quietly and the agent acts on it at its next turn.
   For advice and complaints, where the agent has usually already replied to the line that
@@ -40,8 +39,8 @@ agent is a backstop. A rule the agent must never break goes in the agent's instr
 ## Evals
 
 Both sets are rendered from `workflow.py` by `render_cases.py`, so each case carries the exact
-prompt, tools and policy the recipe runs. Every case has a `policy` block: the rules that must
-fire and be delivered (`expect`) and the rules that must not (`forbid`).
+prompt, tools and policy the recipe runs. Every case uses standard `policy_flag` checks for expected occurrences, delivery and forbidden
+rules. The target enables `report_checks` so absence assertions require complete evidence.
 
 `evals/scripted/` isolates the judge: the caller says fixed lines, one per turn, whatever the
 agent says. Positives for each rule (chest pain now, cannot breathe, thoughts of self-harm, a
@@ -50,8 +49,8 @@ misses that must stay quiet (a past episode, a relative's stroke, a practical qu
 a clean reschedule). `evals/full_call/` runs natural calls where the caller has a goal and, in
 three of the four, says something a rule covers.
 
-`host.py` runs them against a live broker, reads the `policy_flag` events, turns the `policy`
-block into checks next to the case's own, and closes with a precision and recall over rules:
+`host.py` runs them against a live broker and prints the flags, shared SDK checks and individual
+transcripts. The same checks run when the cases are pushed to hosted runs:
 
 ```sh
 uv sync --frozen
@@ -60,8 +59,9 @@ uv run python -u examples/policy_agent/host.py examples/policy_agent/evals/scrip
 DIALT_MODALITY=voice uv run python -u examples/policy_agent/host.py
 ```
 
-Hosted runs (`dialt-evals push`) accept the cases and run the policy agent too, but their checks
-do not yet read flags; the `policy` block is for `host.py`.
+Hosted runs (`dialt-evals push`) evaluate the same policy assertions. Both runners wait for the
+final policy completion watermark. Errors, incomplete monitoring and truncated event evidence
+fail policy checks, including assertions that a rule did not fire.
 
 Reference run on production, text mode, 2026-09-07: 16 of 16 cases, every expected rule raised
 and delivered, nothing raised on the five quiet cases. One finding is baked into the cases:
@@ -77,3 +77,29 @@ Nothing extra. `examples/integrations/twilio` builds a start-frame mode per call
 to it and listen for `policy_flag` in `BridgeHooks.on_event` if the application wants a record
 of each flag. There is no second session to open or close and no injection to retry: the broker
 does both.
+
+
+## Optional occurrence and enforcement example
+
+`workflow.extended_mode()` leaves the basic clinic example unchanged and adds:
+
+- A complaint flag for each matching source utterance.
+- ASR correction rechecks and combined guidance from one completed check.
+- An identity-mismatch rule blocking `reschedule_appointment`.
+- A pending-check hold and failure block on that tool, enforced by Dialt before dispatch.
+
+Run `host.py examples/policy_agent/evals/extended` for simultaneous rules, repeated complaints, an identity
+mismatch and a spelling-correction near miss. The last case is a conversational correction, not a synthetic
+ASR revision event. The platform's component tests exercise actual ASR revision identity, stale
+judge results, restriction retraction and resumed state; the recipe does not imitate those internals.
+
+For phone calls use the same extended mode with the Twilio bridge. Customer-specific approvals
+still use the existing application permission interface. A policy flag does not authorize a tool,
+and a correction cannot undo an external action already dispatched. Listen for `policy_error`
+through the ordinary event hook to surface monitoring failures; no extra model credentials are
+needed. SDK requirement: `dialt-sdk>=0.28.0`.
+
+Release check on dev, text mode, 2026-09-12: all 12 scripted cases passed the shared SDK
+assertions. [Individual results](results/2026-09-12-dev-scripted.json) retain flags, checks and
+transcripts. These checks establish detection and delivery; they do not prove that every
+subsequent conversational response follows the guidance.
