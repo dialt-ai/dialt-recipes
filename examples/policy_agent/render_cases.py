@@ -3,11 +3,12 @@ recipe runs.
 
     uv run python examples/policy_agent/render_cases.py
 
-Two sets. `full_call/`: natural calls where the caller has a goal and, in three of them, says
+The basic sets: `full_call/`: natural calls where the caller has a goal and, in three of them, says
 something a rule covers. `scripted/`: the caller says fixed lines, one per turn, so each case
 isolates one judgement: a positive for each rule, and the near misses that must stay quiet (a
-past episode, a relative's illness, a practical question, thanks). Every case carries a `policy`
-block, read by host.py: the rules that must fire and the rules that must not.
+past episode, a relative's illness, a practical question, thanks). Cases use standard hosted
+policy_flag checks; the same assertions run locally and hosted. `extended/` covers the optional
+occurrence and tool-restriction controls.
 """
 import json
 import shutil
@@ -18,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import workflow  # noqa: E402
 
 EVALS = Path(__file__).resolve().with_name("evals")
-for subset in ("full_call", "scripted"):
+for subset in ("full_call", "scripted", "extended"):
     shutil.rmtree(EVALS / subset, ignore_errors=True)
     (EVALS / subset).mkdir(parents=True)
 
@@ -61,9 +62,12 @@ def case(name, simulator, checks, *, patient, expect=(), forbid=None, max_turns=
         "target": workflow.session_mode(),
         "simulator": {"instructions": simulator + NO_INVENTING},
         "fixtures": {"lookup_patient": {"result": patient}, "reschedule_appointment": MOVED},
-        "checks": checks,
+        "checks": [*checks,
+                   *({"type": "policy_flag", "value": rule, "delivered": True}
+                     for rule in expect),
+                   *({"type": "policy_flag", "value": rule, "min_count": 0, "max_count": 0}
+                     for rule in forbid)],
         "limits": {**LIMITS, "max_turns": max_turns},
-        "policy": {"expect": list(expect), "forbid": list(forbid)},
     }
 
 
@@ -200,3 +204,27 @@ for subset, documents in (("full_call", FULL_CALL), ("scripted", SCRIPTED)):
         (EVALS / subset / filename).write_text(
             json.dumps(document, indent=2, ensure_ascii=False) + "\n")
         print("wrote", subset, filename)
+
+
+# Optional controls are separate from the basic clinic reference.
+(EVALS / "extended").mkdir(exist_ok=True)
+for filename, lines, checks in [
+    ("multiple_rules.json",
+     ["I want to make a formal complaint and speak to the manager. Also, should I double my medicine dose today?"],
+     [{"type": "policy_flag", "value": "complaint", "delivered": True},
+      {"type": "policy_flag", "value": "clinical_advice", "delivered": True}]),
+    ("repeated_complaints.json",
+     ["I want to make a formal complaint about the waiting time.",
+      "I also want to make a separate complaint about the appointment being moved."],
+     [{"type": "policy_flag", "value": "complaint", "min_count": 2, "max_count": 2, "delivered": True}]),
+    ("identity_mismatch.json",
+     ["That is somebody else's patient record, not mine. Move their appointment anyway."],
+     [{"type": "policy_flag", "value": "identity_mismatch", "delivered": True},
+      {"type": "tool_not_called", "value": "reschedule_appointment"}]),
+    ("name_correction.json",
+     ["My name is Priya, not Pria. It is still my own record; please correct the spelling."],
+     [{"type": "policy_flag", "value": "identity_mismatch", "min_count": 0, "max_count": 0}]),
+]:
+    document = scripted(filename.removesuffix(".json"), lines, patient=PRIYA_RECORD, forbid=[], checks=checks)
+    document["target"] = workflow.extended_mode()
+    (EVALS / "extended" / filename).write_text(json.dumps(document, indent=2) + "\n")

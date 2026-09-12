@@ -45,7 +45,7 @@ def test_the_policy_is_valid_for_the_sdk_and_names_three_distinct_rules() -> Non
 
 
 @pytest.mark.parametrize("subset,count", [("full_call", 4), ("scripted", 12)])
-def test_cases_carry_the_workflow_its_policy_and_a_policy_block(subset, count) -> None:
+def test_cases_carry_the_workflow_and_standard_hosted_policy_checks(subset, count) -> None:
     docs = documents(subset)
     assert len(docs) == count
     cases = collect_cases([EVALS / subset], modality="text")
@@ -54,50 +54,30 @@ def test_cases_carry_the_workflow_its_policy_and_a_policy_block(subset, count) -
         assert list(case.target_tools) == WORKFLOW.tool_manifest()
         assert case.target["policy"] == WORKFLOW.POLICY
         assert set(case.fixtures) == {tool["name"] for tool in case.target_tools}
-        policy = document["policy"]
-        assert set(policy) == {"expect", "forbid"}
-        assert set(policy["expect"]) <= set(RULE_IDS) and set(policy["forbid"]) <= set(RULE_IDS)
-        assert not set(policy["expect"]) & set(policy["forbid"])
-        assert set(policy["expect"]) | set(policy["forbid"])
+        assert "policy" not in document
+        checks = [c for c in case.checks if c["type"] == "policy_flag"]
+        assert checks and all(c["value"] in RULE_IDS for c in checks)
 
 
 def test_the_scripted_set_covers_every_rule_and_the_near_misses() -> None:
     docs = documents("scripted")
-    expected = {rule for document in docs for rule in document["policy"]["expect"]}
+    expected = {c["value"] for document in docs for c in document["checks"]
+                if c["type"] == "policy_flag" and c.get("min_count", 1) > 0}
     assert expected == set(RULE_IDS)
-    quiet = [document for document in docs if not document["policy"]["expect"]]
+    quiet = [d for d in docs if all(c.get("min_count", 1) == 0 for c in d["checks"] if c["type"] == "policy_flag")]
     assert len(quiet) >= 4
     for document in docs:
         assert "Say exactly the following lines" in document["simulator"]["instructions"]
         assert "1. " in document["simulator"]["instructions"]
-    assert [d["policy"]["expect"] for d in documents("full_call")].count([]) == 1
+    assert sum(all(c.get("min_count", 1) == 0 for c in d["checks"] if c["type"] == "policy_flag")
+               for d in documents("full_call")) == 1
 
 
-def test_host_turns_flags_into_checks_and_a_score() -> None:
-    events = [
-        {"side": "simulator", "type": "policy_flag", "rule": "complaint", "delivered": True},
-        {"side": "target", "type": "asr", "text": "hello"},
-        {"side": "target", "type": "policy_flag", "rule": "emergency", "action": "speak_now",
-         "evidence": "chest pain", "delivered": True, "reply_started": True, "t_ms": 1200},
-        {"side": "target", "type": "policy_flag", "rule": "clinical_advice", "action": "next_turn",
-         "evidence": "dose", "delivered": False, "reply_started": False, "t_ms": 3000},
-    ]
-    flags = HOST.flags_from(events)
-    assert [flag["rule"] for flag in flags] == ["emergency", "clinical_advice"]
-    assert "side" not in flags[0] and flags[0]["t_ms"] == 1200
-    checks = HOST.policy_checks({"expect": ["emergency", "clinical_advice", "complaint"],
-                                 "forbid": []}, flags)
-    assert [(check["pass"], check["detail"]) for check in checks] == [
-        (True, ""), (False, "raised, not delivered"), (False, "not raised")]
-    assert HOST.policy_checks({"expect": [], "forbid": ["emergency"]}, flags) == [
-        {"type": "policy_flag", "name": "emergency did not fire", "pass": False, "detail": "raised"}]
-
-    summaries = [
-        {"passed": True, "flags": flags, "policy": {"expect": ["emergency"], "forbid": ["complaint"]}},
-        {"passed": False, "flags": [], "policy": {"expect": ["complaint"], "forbid": []}},
-        {"passed": True, "flags": [{"rule": "complaint"}], "policy": {"expect": [], "forbid": RULE_IDS}},
-    ]
-    assert HOST.score(summaries) == {
-        "cases": 3, "passed": 2, "true_positives": 1, "false_positives": 1, "missed": 1,
-        "precision": 0.5, "recall": 0.5}
-    assert HOST.score([])["precision"] == 1.0
+def test_extended_controls_are_separate_and_sdk_validated():
+    mode = DialtMode.from_wire(WORKFLOW.extended_mode())
+    assert mode.policy["batch_guidance"] and mode.policy["recheck_corrections"]
+    assert mode.policy["wait_for_check"] == ["reschedule_appointment"]
+    assert "batch_guidance" not in WORKFLOW.POLICY
+    cases = collect_cases([EVALS / "extended"], modality="text")
+    assert len(cases) == 4
+    assert all(any(c["type"] == "policy_flag" for c in case.checks) for case in cases)

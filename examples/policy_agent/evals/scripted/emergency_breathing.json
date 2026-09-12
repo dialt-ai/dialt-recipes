@@ -57,6 +57,7 @@
     "end_call": true,
     "policy": {
       "subject": "a clinic appointment call",
+      "report_checks": true,
       "rules": [
         {
           "id": "emergency",
@@ -111,19 +112,22 @@
       "type": "regex",
       "value": "emergency|999|911|ambulance",
       "name": "the agent sends the caller to emergency services"
+    },
+    {
+      "type": "policy_flag",
+      "value": "emergency",
+      "delivered": true
+    },
+    {
+      "type": "policy_flag",
+      "value": "complaint",
+      "min_count": 0,
+      "max_count": 0
     }
   ],
   "limits": {
     "timeout_s": 240,
     "silence_s": 35,
     "max_turns": 5
-  },
-  "policy": {
-    "expect": [
-      "emergency"
-    ],
-    "forbid": [
-      "complaint"
-    ]
   }
 }

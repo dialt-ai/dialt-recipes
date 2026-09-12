@@ -1,3 +1,4 @@
+from dataclasses import replace
 import asyncio
 import json
 from pathlib import Path
@@ -466,3 +467,95 @@ def test_target_greeting_opens_the_conversation_and_nothing_is_sent_first(monkey
     assert modes[1].greeting is False
     with pytest.raises(ValueError, match="not both"):
         SimulationCase.from_dict({"name": "n", "starter": "hi", "target": {"greeting": "Hello"}})
+
+
+@pytest.mark.parametrize('ending', ['settled', 'error', 'incomplete'])
+def test_policy_drain_keeps_observers_and_replaces_corrected_speech(monkeypatch, ending):
+    from types import SimpleNamespace
+
+    def event(kind, **data):
+        return SimpleNamespace(type=kind, t_ms=1, data=data)
+
+    class DelayedSession(_FakeSession):
+        async def events(self):
+            for item in self._events:
+                if isinstance(item, tuple):
+                    delay, item = item
+                    await asyncio.sleep(delay)
+                yield item
+            await asyncio.sleep(30)
+
+    tail = [
+        (0.025, event('policy_flag', rule='r', occurrence_id='one:r', revision=1,
+                      status='raised', delivered=True)),
+        event('utterance', text='I will get the manager now.', turn_id='turn-2', policy_version=2),
+        event('utterance', text='I will get the manager.', turn_id='turn-2',
+              corrected=True, policy_version=2),
+    ]
+    if ending == 'settled':
+        tail.append(event('policy_settled', policy_version=2, checked_version=2, healthy=True))
+    elif ending == 'error':
+        tail.append(event('error', code='broken'))
+    target = DelayedSession([event('asr', text='I want to complain', policy_version=1), *tail])
+    simulator = DelayedSession([(0.01, event('session_end_requested', farewell='bye'))])
+    sessions = iter([target, simulator])
+    observed = []
+
+    async def connect(*args, **kwargs):
+        return next(sessions)
+
+    async def observe(item, session):
+        observed.append(item.type)
+
+    monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
+    case = SimulationCase.from_dict({
+        'name': 'drain', 'starter': 'Hello',
+        'target': {'policy': {'report_checks': True, 'rules': [
+            {'id': 'r', 'when': 'A complaint', 'do': 'Escalate', 'action': 'next_turn'}]}},
+        'limits': {'timeout_s': 10},
+        'checks': [{'type': 'policy_flag', 'value': 'r', 'delivered': True}],
+    })
+    case = replace(case, timeout_s=0.1)  # Keep the incomplete-monitoring timeout test short.
+    report = asyncio.run(run_simulation('ws://test', 'key', case, on_target_event=observe))
+    assert report.check_results[0]['pass'] is (ending == 'settled')
+    assert 'policy_flag' in observed
+    assert [turn['text'] for turn in report.transcript if turn['role'] == 'assistant'] == [
+        'I will get the manager.']
+    assert simulator.sent == []
+
+
+@pytest.mark.parametrize('during_drain', [False, True])
+def test_policy_asr_revision_updates_its_source_not_the_latest_user(monkeypatch, during_drain):
+    from types import SimpleNamespace
+    def event(kind, **data):
+        return SimpleNamespace(type=kind, t_ms=1, data=data)
+    class DelayedSession(_FakeSession):
+        async def events(self):
+            for item in self._events:
+                if isinstance(item, tuple):
+                    delay, item = item
+                    await asyncio.sleep(delay)
+                yield item
+            await asyncio.sleep(30)
+    target = DelayedSession([
+        event('asr', text='wrong record', utterance_id='one', policy_version=1),
+        event('asr', text='next question', utterance_id='two', policy_version=2),
+        (0.025, event('asr_correction', text='correct record', utterance_id='one', policy_version=3)),
+        event('policy_settled', policy_version=3, checked_version=3, healthy=True),
+    ])
+    simulator = DelayedSession([(0.01 if during_drain else 0.05,
+                                event('session_end_requested', farewell='bye'))])
+    sessions = iter([target, simulator])
+    async def connect(*args, **kwargs):
+        return next(sessions)
+    monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
+    case = SimulationCase.from_dict({
+        'name': 'revision', 'starter': 'Hello',
+        'target': {'policy': {'report_checks': True, 'rules': [
+            {'id': 'r', 'when': 'A complaint', 'do': 'Escalate', 'action': 'next_turn'}]}},
+        'limits': {'timeout_s': 10},
+        'checks': [{'type': 'policy_flag', 'value': 'r', 'min_count': 0, 'max_count': 0}],
+    })
+    report = asyncio.run(run_simulation('ws://test', 'key', case))
+    assert [turn['text'] for turn in report.transcript] == ['correct record', 'next question']
+    assert report.check_results[0]['pass']

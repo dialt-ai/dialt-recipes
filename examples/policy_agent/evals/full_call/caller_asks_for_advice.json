@@ -57,6 +57,7 @@
     "end_call": true,
     "policy": {
       "subject": "a clinic appointment call",
+      "report_checks": true,
       "rules": [
         {
           "id": "emergency",
@@ -115,20 +116,28 @@
       "type": "regex",
       "value": "clinician|nurse|doctor|GP|pharmacist",
       "name": "the agent offers a clinician"
+    },
+    {
+      "type": "policy_flag",
+      "value": "clinical_advice",
+      "delivered": true
+    },
+    {
+      "type": "policy_flag",
+      "value": "emergency",
+      "min_count": 0,
+      "max_count": 0
+    },
+    {
+      "type": "policy_flag",
+      "value": "complaint",
+      "min_count": 0,
+      "max_count": 0
     }
   ],
   "limits": {
     "timeout_s": 240,
     "silence_s": 35,
     "max_turns": 12
-  },
-  "policy": {
-    "expect": [
-      "clinical_advice"
-    ],
-    "forbid": [
-      "emergency",
-      "complaint"
-    ]
   }
 }
