@@ -29,7 +29,7 @@ hard stop or undo an action already taken. A short call may end before monitorin
 errors and incomplete checks remain visible, not counted as successful monitoring.
 
 The API contract lives in [Dialt's policy design](https://github.com/dialt-ai/dialt/blob/main/docs/policy-agent.md).
-This recipe requires `dialt-sdk>=0.30.0`.
+This recipe requires `dialt-sdk>=0.31.0`.
 
 ## Run the cases
 
