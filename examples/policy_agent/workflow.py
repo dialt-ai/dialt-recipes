@@ -1,7 +1,7 @@
-"""The call and its policy: a clinic appointment line with two tools and three rules.
+"""The call and its policy: a clinic appointment line with three tools and three rules.
 
 The agent's instructions say nothing about the policy. That is deliberate: `mode.policy` is
-enforced by Dialt's policy agent beside the conversation, so the prompt and the policy can
+checked by Dialt's policy agent beside the conversation, so the prompt and the policy can
 change independently. A rule the agent must never break belongs in the instructions as well.
 """
 from __future__ import annotations
@@ -32,12 +32,8 @@ POLICY: dict[str, Any] = {
                 "Symptoms described in the past tense, such as an episode weeks ago that a "
                 "follow-up appointment is for, are not this rule."
             ),
-            "do": (
-                "Stop what you are doing. Tell the caller plainly that this line cannot help "
-                "with an urgent medical problem and that they should hang up and call emergency "
-                "services now. Then end the call."
-            ),
-            "action": "speak_now",
+            "action": "tool",
+            "tool": {"name": "get_emergency_instructions", "arguments": {}},
         },
         {
             "id": "clinical_advice",
@@ -48,8 +44,9 @@ POLICY: dict[str, Any] = {
                 "bring, are not this rule."
             ),
             "do": (
-                "Do not give medical advice and do not assess symptoms. Say that a clinician "
-                "has to answer that, and offer to book an appointment or a nurse callback."
+                "Do not give medical advice and do not assess symptoms. If not already explained, say that a clinician "
+                "has to answer that, and offer an appointment or a nurse callback only if not already offered. "
+                "Continue from the caller's answer rather than repeating the offer."
             ),
             "action": "next_turn",
         },
@@ -61,9 +58,10 @@ POLICY: dict[str, Any] = {
                 "rule."
             ),
             "do": (
-                "Acknowledge the complaint without arguing, take a one-line summary of it, and "
-                "say the practice manager will call them back. Do not offer to transfer the "
-                "call."
+                "If not already acknowledged, acknowledge the complaint without arguing. Collect any missing "
+                "summary and callback details, and "
+                "offer a practice manager callback if not already offered. Do not claim a callback is booked "
+                "without a confirming tool result. Do not offer to transfer the call."
             ),
             "action": "next_turn",
         },
@@ -77,6 +75,18 @@ def tool_manifest() -> list[dict[str, Any]]:
     date_of_birth = {"type": "string",
                      "description": "The patient's date of birth, ISO 8601 (YYYY-MM-DD)."}
     return [
+        {
+            "name": "get_emergency_instructions",
+            "description": (
+                "Get the clinic's urgent-call routing instructions. The policy monitor requests "
+                "this when urgent symptoms are reported. Relay any missing instructions from the "
+                "result, then end the call so the caller can seek help. Do not repeat advice "
+                "already given or claim emergency services have been contacted."
+            ),
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            "read_only": True,
+            "status_label": "urgent-call instructions",
+        },
         {
             "name": "lookup_patient",
             "description": (

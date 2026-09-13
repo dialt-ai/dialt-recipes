@@ -38,7 +38,7 @@ def test_the_policy_is_valid_for_the_sdk_and_names_three_distinct_rules() -> Non
                         if key != "kind"})
     assert mode.policy == WORKFLOW.POLICY
     actions = {rule["id"]: rule["action"] for rule in WORKFLOW.POLICY["rules"]}
-    assert actions == {"emergency": "speak_now", "clinical_advice": "next_turn",
+    assert actions == {"emergency": "tool", "clinical_advice": "next_turn",
                        "complaint": "next_turn"}
     with pytest.raises(ValueError):
         DialtMode(policy={"rules": [{**WORKFLOW.POLICY["rules"][0], "action": "shout"}]})

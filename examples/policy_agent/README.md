@@ -11,30 +11,37 @@ lives in a document the customer owns and can change without touching the prompt
 mode = {"kind": "dialt", "instructions": ..., "tools": ..., "policy": {
     "subject": "a clinic appointment call",
     "rules": [
-        {"id": "emergency", "when": "...", "do": "...", "action": "speak_now"},
+        {"id": "emergency", "when": "...", "action": "tool",
+         "tool": {"name": "get_emergency_instructions", "arguments": {}}},
         {"id": "clinical_advice", "when": "...", "do": "...", "action": "next_turn"},
         {"id": "complaint", "when": "...", "do": "...", "action": "next_turn"},
     ]}}
 ```
 
-`workflow.py` has the full rules. Each names what to look for (`when`), what the agent is told
-when it applies (`do`), and how that lands (`action`):
+`workflow.py` owns the rules. The judge detects `when` in one check; it does not plan actions
+or run a second check of whether the reply was sufficient.
 
-- `speak_now`: the instruction is injected and a reply is requested when the floor is available. For the emergency rule: tell the caller to hang up and call emergency
-  services, then end the call.
-- `next_turn`: the instruction is injected quietly and the agent acts on it at its next turn.
-  For advice and complaints, where the agent has usually already replied to the line that
-  triggered the rule and the correction shapes what comes next.
+- `next_turn` adds quiet context without requesting another reply. Advice and complaint
+  guidance asks the agent to supply only what is missing and continue from the caller's answer.
+- `tool` calls a declared application tool with fixed arguments. Here a read-only tool returns
+  the clinic's emergency routing instructions. Its ordinary completion result
+  requests a response when the floor permits. The conversational agent voices the result;
+  the tool does not supply a canned utterance or contact emergency services.
 
-The host gets a `policy_flag` event for each rule raised (`rule`, `action`, `evidence`,
-`delivered`, `reply_started`), and the session record carries the policy, every flag and a
-summary. Each rule is raised once per call, across reconnects. The contract, timing included,
-is in the Dialt docs (`docs/policy-agent.md`).
+The examples use simulated tool results. A real clinic host supplies its own approved routing
+instructions. Normal tool permissions, restrictions and deferred results apply. Use
+`deferred: true, notify_on_complete: false` for tools such as silent audit logging. The host can design a
+supervisor tool to return availability and prepare a transfer using the same contract.
 
-Timing to be clear about: the check starts when a line completes, and the agent starts its
-reply at the same moment. A `next_turn` note therefore shapes the reply after the one that
-triggered it, and even a `speak_now` note lands after the agent has begun answering. The policy
-agent is a backstop. A rule the agent must never break goes in the agent's instructions as well.
+The host gets `policy_flag` events; `tool_call_id` links an admitted policy action to normal
+tool events. Admission does not prove success. Rules fire once per session by default and
+admitted actions are not replayed by a transcript correction. Tool hosts still own idempotency.
+
+The judge runs beside the conversational agent and can finish after its reply. Quiet guidance
+avoids requesting a redundant response, but does not guarantee generated language never
+repeats. Tool completion can request an intermediate response without interrupting current
+speech. A late flag cannot undo an action or speech. Rules that must hold before speaking
+belong in the primary instructions. Full contract: Dialt's `docs/policy-agent.md`.
 
 ## Evals
 
@@ -60,16 +67,9 @@ DIALT_MODALITY=voice uv run python -u examples/policy_agent/host.py
 ```
 
 Hosted runs (`dialt-evals push`) evaluate the same policy assertions. Both runners wait for the
-final policy completion watermark. Errors, incomplete monitoring and truncated event evidence
+final policy completion watermark. The local host continues answering dispatched target tools
+while final monitoring drains, with conversation relays stopped. Errors, incomplete monitoring and truncated event evidence
 fail policy checks, including assertions that a rule did not fire.
-
-Reference run on production, text mode, 2026-09-07: 16 of 16 cases, every expected rule raised
-and delivered, nothing raised on the five quiet cases. One finding is baked into the cases:
-urgent symptoms are, by the rules' own wording, also a question about whether symptoms are
-serious, so the judge raised `clinical_advice` next to `emergency` on two of the four emergency
-calls. The emergency instruction is the one spoken and it ends the call, so emergency cases
-forbid only `complaint`. Two rules that overlap in `when` will co-fire; write them so they do not
-if that matters.
 
 ## On a phone call
 
@@ -97,9 +97,13 @@ For phone calls use the same extended mode with the Twilio bridge. Customer-spec
 still use the existing application permission interface. A policy flag does not authorize a tool,
 and a correction cannot undo an external action already dispatched. Listen for `policy_error`
 through the ordinary event hook to surface monitoring failures; no extra model credentials are
-needed. SDK requirement: `dialt-sdk>=0.28.0`.
+needed. SDK requirement: `dialt-sdk>=0.29.0`.
 
-Release check on dev, text mode, 2026-09-12: all 12 scripted cases passed the shared SDK
-assertions. [Individual results](results/2026-09-12-dev-scripted.json) retain flags, checks and
-transcripts. These checks establish detection and delivery; they do not prove that every
-subsequent conversational response follows the guidance.
+Live text checks on production, 2026-09-13, with SDK 0.29.0: advice, complaint and a practical
+near miss passed. The emergency case gave the expected guidance and called the routing tool,
+but failed the final monitoring assertion in both runs because the short call closed before
+the judge settled. The first run also exposed the local host dropping a tool call during drain;
+the host now returns its result. This does not make broker closure wait for the judge.
+[Individual results](results/2026-09-13-tool-actions.json) retain both successful and failed runs.
+These are service tests of detection and delivery, not a guarantee that every call is fully
+monitored before hangup. Older results describe their recorded revision only.

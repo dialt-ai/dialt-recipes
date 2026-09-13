@@ -402,6 +402,27 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         "simulator": VoiceTurnRelay(target, on_error=relay_failed),
     }
 
+    async def handle_target_tool_call(event, source: DialtSession) -> None:
+        call_id = str(event.data.get("id") or "")
+        tool_name = str(event.data.get("name") or "")
+        value, outcome, verified = await _fixture_result(
+            case.fixtures, tool_name, event.data.get("args") or {},
+            report.fixture_state, session=source,
+        )
+        await source.send_tool_result(call_id, value, outcome=outcome, verified=verified)
+        start_tool_result_observer(tool_name, event.data.get("args") or {}, value,
+                                   outcome, verified, source)
+        fixture = case.fixtures.get(tool_name)
+        if len(report.events) < 2000:
+            report.events.append({
+                "side": "target", "type": "tool_result", "t_ms": event.t_ms,
+                "id": call_id, "name": tool_name, "outcome": outcome,
+                "verified": verified,
+                "fixture": ("unhandled" if fixture is None else "callable"
+                            if callable(fixture) else fixture.get("fixture_type", "fixed")
+                            if isinstance(fixture, dict) else "fixed"),
+            })
+
     async def consume(side: str, source: DialtSession) -> None:
         try:
             async for event in source.events():
@@ -435,7 +456,11 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                                 turn["text"] = event.data.get("text", "")
                                 break
                 if stop.is_set():
-                    if side == "target" and event.type == "error":
+                    if side == "target" and event.type == "tool_call":
+                        # Policy actions can arrive while final monitoring drains. Complete
+                        # already-dispatched tools without restarting conversation relays.
+                        await handle_target_tool_call(event, source)
+                    elif side == "target" and event.type == "error":
                         failure = {"type": "policy_error", "side": "target", "reason": "connection_error"}
                         policy_evidence.record(failure)
                         report.events.append(failure)
@@ -495,25 +520,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                 elif event.type == "canceled" and modality == "voice":
                     voice_relays[side].canceled()
                 elif side == "target" and event.type == "tool_call":
-                    call_id = str(event.data.get("id") or "")
-                    tool_name = str(event.data.get("name") or "")
-                    value, outcome, verified = await _fixture_result(
-                        case.fixtures, tool_name, event.data.get("args") or {},
-                        report.fixture_state, session=source,
-                    )
-                    await source.send_tool_result(call_id, value, outcome=outcome, verified=verified)
-                    start_tool_result_observer(tool_name, event.data.get("args") or {}, value,
-                                               outcome, verified, source)
-                    fixture = case.fixtures.get(tool_name)
-                    if len(report.events) < 2000:
-                        report.events.append({
-                            "side": "target", "type": "tool_result", "t_ms": event.t_ms,
-                            "id": call_id, "name": tool_name, "outcome": outcome,
-                            "verified": verified,
-                            "fixture": ("unhandled" if fixture is None else "callable"
-                                        if callable(fixture) else fixture.get("fixture_type", "fixed")
-                                        if isinstance(fixture, dict) else "fixed"),
-                        })
+                    await handle_target_tool_call(event, source)
                 elif event.type == "session_end_requested":
                     # The broker sends this when the model called end_call(farewell). Record it
                     # as a tool call, as hosted runs do, so tool_called checks and the run page

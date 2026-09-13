@@ -559,3 +559,57 @@ def test_policy_asr_revision_updates_its_source_not_the_latest_user(monkeypatch,
     report = asyncio.run(run_simulation('ws://test', 'key', case))
     assert [turn['text'] for turn in report.transcript] == ['correct record', 'next question']
     assert report.check_results[0]['pass']
+
+
+def test_policy_drain_answers_dispatched_tools_without_restarting_relays(monkeypatch):
+    from types import SimpleNamespace
+    def event(kind, **data):
+        return SimpleNamespace(type=kind, t_ms=1, data=data)
+
+    results = []
+    class Target(_FakeSession):
+        async def events(self):
+            yield event('asr', text='A manager please', policy_version=1)
+            await asyncio.sleep(0.025)
+            yield event('policy_flag', rule='r', occurrence_id='one:r', revision=1,
+                        status='raised', delivered=True, action='tool', tool_call_id='action-1')
+            yield event('tool_call', id='action-1', name='request_manager', args={})
+            assert len(results) == 1
+            yield event('utterance', text='A manager is available.', turn_id='job-1', policy_version=2)
+            yield event('policy_settled', policy_version=2, checked_version=2, healthy=True)
+            await asyncio.sleep(30)
+
+        async def send_tool_result(self, call_id, value, **kwargs):
+            results.append((call_id, value, kwargs))
+
+    class Simulator(_FakeSession):
+        async def events(self):
+            await asyncio.sleep(0.01)
+            yield event('session_end_requested', farewell='bye')
+            await asyncio.sleep(30)
+
+    target, simulator = Target([]), Simulator([])
+    sessions = iter([target, simulator])
+    async def connect(*args, **kwargs):
+        return next(sessions)
+    monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
+    case = SimulationCase.from_dict({
+        'name': 'late policy action', 'starter': '',
+        'target': {'greeting': 'Hello', 'tools': [{'name': 'request_manager', 'description': 'Prepare a transfer.',
+                             'parameters': {'type': 'object', 'properties': {}}}],
+                   'policy': {'report_checks': True, 'rules': [
+                       {'id': 'r', 'when': 'A manager is requested', 'action': 'tool',
+                        'tool': {'name': 'request_manager', 'arguments': {}}}]}},
+        'fixtures': {'request_manager': {'result': {'available': True}}},
+        'checks': [{'type': 'policy_flag', 'value': 'r', 'delivered': True},
+                   {'type': 'tool_called', 'value': 'request_manager'}],
+    })
+    report = asyncio.run(run_simulation('ws://test', 'key', replace(case, timeout_s=1)))
+    assert report.passed
+    assert results == [('action-1', {'available': True}, {'outcome': 'succeeded', 'verified': True})]
+    assert target.sent == simulator.sent == []
+    from dialt.policy import PolicyEvidence
+    evidence = PolicyEvidence()
+    for item in report.events:
+        evidence.record(item)
+    assert evidence.complete
