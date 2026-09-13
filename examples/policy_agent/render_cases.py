@@ -7,8 +7,7 @@ The basic sets: `full_call/`: natural calls where the caller has a goal and, in 
 something a rule covers. `scripted/`: the caller says fixed lines, one per turn, so each case
 isolates one judgement: a positive for each rule, and the near misses that must stay quiet (a
 past episode, a relative's illness, a practical question, thanks). Cases use standard hosted
-policy_flag checks; the same assertions run locally and hosted. `extended/` covers the optional
-occurrence and tool-restriction controls.
+policy_flag checks; the same assertions run locally and hosted. `extended/` covers repeated conditions, identity concerns and near misses.
 """
 import json
 import shutil

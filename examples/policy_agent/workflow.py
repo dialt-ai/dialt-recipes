@@ -1,8 +1,7 @@
 """The call and its policy: a clinic appointment line with three tools and three rules.
 
-The agent's instructions say nothing about the policy. That is deliberate: `mode.policy` is
-checked by Dialt's policy agent beside the conversation, so the prompt and the policy can
-change independently. A rule the agent must never break belongs in the instructions as well.
+Define the conditions and actions once. Dialt includes them in agent instructions and
+checks completed caller and assistant turns for quiet background guidance.
 """
 from __future__ import annotations
 
@@ -21,7 +20,8 @@ GREETING = "Hi, you've reached the clinic appointment line. How can I help?"
 
 POLICY: dict[str, Any] = {
     "subject": "a clinic appointment call",
-    "report_checks": True,
+    "include_instructions": True,
+    "background_guidance": True,
     "rules": [
         {
             "id": "emergency",
@@ -32,8 +32,8 @@ POLICY: dict[str, Any] = {
                 "Symptoms described in the past tense, such as an episode weeks ago that a "
                 "follow-up appointment is for, are not this rule."
             ),
-            "action": "tool",
-            "tool": {"name": "get_emergency_instructions", "arguments": {}},
+            "do": "Call get_emergency_instructions, relay any missing urgent-care instructions, "
+                  "then end the call so the caller can seek help. Do not repeat advice already given.",
         },
         {
             "id": "clinical_advice",
@@ -48,7 +48,6 @@ POLICY: dict[str, Any] = {
                 "has to answer that, and offer an appointment or a nurse callback only if not already offered. "
                 "Continue from the caller's answer rather than repeating the offer."
             ),
-            "action": "next_turn",
         },
         {
             "id": "complaint",
@@ -63,13 +62,10 @@ POLICY: dict[str, Any] = {
                 "offer a practice manager callback if not already offered. Do not claim a callback is booked "
                 "without a confirming tool result. Do not offer to transfer the call."
             ),
-            "action": "next_turn",
         },
     ],
 }
-
 RULE_IDS = [rule["id"] for rule in POLICY["rules"]]
-
 
 def tool_manifest() -> list[dict[str, Any]]:
     date_of_birth = {"type": "string",
@@ -78,8 +74,8 @@ def tool_manifest() -> list[dict[str, Any]]:
         {
             "name": "get_emergency_instructions",
             "description": (
-                "Get the clinic's urgent-call routing instructions. The policy monitor requests "
-                "this when urgent symptoms are reported. Relay any missing instructions from the "
+                "Get the clinic's urgent-call routing instructions. Call this tool "
+                "when urgent symptoms are reported. Relay any missing instructions from the "
                 "result, then end the call so the caller can seek help. Do not repeat advice "
                 "already given or claim emergency services have been contacted."
             ),
@@ -124,31 +120,22 @@ def tool_manifest() -> list[dict[str, Any]]:
         },
     ]
 
-
 def session_mode(*, voice: str = DEFAULT_VOICE) -> dict[str, Any]:
     """The start-frame mode document for a call, policy included."""
     return {"kind": "dialt", "voice": voice, "instructions": INSTRUCTIONS,
             "tools": tool_manifest(), "greeting": GREETING, "end_call": True,
             "policy": POLICY}
 
-
 def extended_mode() -> dict[str, Any]:
-    """Optional occurrence tracking and identity protection using native policy controls."""
+    """Add an identity concern to the same policy guidance contract."""
     from copy import deepcopy
     mode = deepcopy(session_mode())
     policy = mode["policy"]
-    policy.update(recheck_corrections=True, batch_guidance=True,
-                  wait_for_check=["reschedule_appointment"],
-                  block_on_error=["reschedule_appointment"])
-    for rule in policy["rules"]:
-        if rule["id"] == "complaint":
-            rule["frequency"] = "once_per_turn"
     policy["rules"].append({
         "id": "identity_mismatch",
         "when": "The caller explicitly says the patient record being discussed belongs to someone else. "
                 "A caller correcting the spelling of their own name is not this rule.",
         "do": "Do not change that appointment. Clarify whose record is needed before proceeding.",
-        "action": "next_turn",
-        "block_tools": ["reschedule_appointment"],
+
     })
     return mode
