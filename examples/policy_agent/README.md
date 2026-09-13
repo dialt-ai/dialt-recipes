@@ -50,3 +50,8 @@ uv run python -u examples/policy_agent/host.py examples/policy_agent/evals/exten
 For phone calls, pass the same mode to `examples/integrations/twilio`. Listen for native
 `policy_flag`, `policy_error` and `policy_settled` events through the ordinary event hook.
 No separate model credentials or application injection loop are needed.
+
+The live host checks monitoring through the final turn for continuing calls. If the target
+explicitly hangs up before the monitor finishes, rule checks remain unassessed and a separate
+boundary check verifies that incompleteness was reported. Observed forbidden flags and other
+monitoring failures still fail. Speech, tool and semantic checks remain required.

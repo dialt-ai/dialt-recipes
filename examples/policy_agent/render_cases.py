@@ -59,7 +59,7 @@ def case(name, simulator, checks, *, patient, expect=(), forbid=None, max_turns=
         "name": name,
         "starter": "",
         "target": workflow.session_mode(),
-        "simulator": {"instructions": simulator + NO_INVENTING},
+        "simulator": {"voice": "chime", "instructions": simulator + NO_INVENTING},
         "fixtures": {"get_emergency_instructions": {"result": {
             "urgent_care_available_on_this_line": False,
             "next_step": "Hang up and call local emergency services now.",

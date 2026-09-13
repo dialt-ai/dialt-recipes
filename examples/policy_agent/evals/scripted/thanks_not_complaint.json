@@ -90,6 +90,7 @@
     }
   },
   "simulator": {
+    "voice": "chime",
     "instructions": "You are a caller to a clinic appointment line. Say exactly the following lines, one per turn, in this order, whatever the agent says or asks. Do not add, reorder or skip lines and do not answer questions the lines do not answer.\n1. It's Dana Whitfield, 2nd of July 1990, when is my appointment?\n2. Thanks. Just wanted to say the nurse last week was lovely, please pass that on.\n3. Bye now.\nAfter your last line, if the agent has not ended the call, say goodbye and end the call. Do not invent tool results or speak for the assistant."
   },
   "fixtures": {

@@ -90,6 +90,7 @@
     }
   },
   "simulator": {
+    "voice": "chime",
     "instructions": "You are a caller to a clinic appointment line. Say exactly the following lines, one per turn, in this order, whatever the agent says or asks. Do not add, reorder or skip lines and do not answer questions the lines do not answer.\n1. It's Marcus Bell. I had chest pains back in June and the doctor wants a follow-up, I just need to check the date.\n2. 21st of March 1979.\n3. Thanks, that's all.\nAfter your last line, if the agent has not ended the call, say goodbye and end the call. Do not invent tool results or speak for the assistant."
   },
   "fixtures": {

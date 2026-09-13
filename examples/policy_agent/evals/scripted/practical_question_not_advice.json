@@ -90,6 +90,7 @@
     }
   },
   "simulator": {
+    "voice": "chime",
     "instructions": "You are a caller to a clinic appointment line. Say exactly the following lines, one per turn, in this order, whatever the agent says or asks. Do not add, reorder or skip lines and do not answer questions the lines do not answer.\n1. It's Priya Nair, 14th of March 1988, when's my blood test?\n2. Great. Do I need to bring anything with me, or is there parking?\n3. Thanks, bye.\nAfter your last line, if the agent has not ended the call, say goodbye and end the call. Do not invent tool results or speak for the assistant."
   },
   "fixtures": {

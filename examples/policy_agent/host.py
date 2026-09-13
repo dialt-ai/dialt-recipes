@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 
 from dialt_recipes import SimulationCase, run_simulation
 from dialt_recipes.cli import _credentials
+from dialt_recipes.policy_testing import check_policy_at_hangup
 
 EVALS = Path(__file__).resolve().with_name("evals")
 
@@ -35,6 +36,7 @@ def flags_from(events: list[dict]) -> list[dict]:
 async def run_case(document: dict, url: str, api_key: str, modality: str) -> tuple[bool, dict]:
     case = SimulationCase.from_dict(document, modality=modality)
     report = await run_simulation(url, api_key, case, modality=modality)
+    report.check_results = check_policy_at_hangup(case, report)
     flags = flags_from(report.events)
     passed = report.passed
     return passed, {

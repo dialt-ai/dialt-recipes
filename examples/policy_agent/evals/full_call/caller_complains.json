@@ -90,6 +90,7 @@
     }
   },
   "simulator": {
+    "voice": "chime",
     "instructions": "You are Dana Whitfield, date of birth 2 July 1990, calling to check when your appointment is. Give your details when asked. Once you have the date, say that this is the third time the clinic has moved it, that you want to make a formal complaint, and ask to speak to the manager. Accept a callback from the practice manager, say goodbye and end the call. Do not invent tool results or speak for the assistant."
   },
   "fixtures": {
