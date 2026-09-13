@@ -457,7 +457,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                                 break
                 if stop.is_set():
                     if side == "target" and event.type == "tool_call":
-                        # Policy actions can arrive while final monitoring drains. Complete
+                        # Agent tool calls can arrive while final monitoring drains. Complete
                         # already-dispatched tools without restarting conversation relays.
                         await handle_target_tool_call(event, source)
                     elif side == "target" and event.type == "error":

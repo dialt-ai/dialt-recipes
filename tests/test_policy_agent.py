@@ -37,9 +37,9 @@ def test_the_policy_is_valid_for_the_sdk_and_names_three_distinct_rules() -> Non
     mode = DialtMode(**{key: value for key, value in WORKFLOW.session_mode().items()
                         if key != "kind"})
     assert mode.policy == WORKFLOW.POLICY
-    actions = {rule["id"]: rule["action"] for rule in WORKFLOW.POLICY["rules"]}
-    assert actions == {"emergency": "tool", "clinical_advice": "next_turn",
-                       "complaint": "next_turn"}
+    assert WORKFLOW.POLICY["include_instructions"] and WORKFLOW.POLICY["background_guidance"]
+    assert all(set(rule) == {"id", "when", "do"} for rule in WORKFLOW.POLICY["rules"])
+    assert "get_emergency_instructions" in WORKFLOW.POLICY["rules"][0]["do"]
     with pytest.raises(ValueError):
         DialtMode(policy={"rules": [{**WORKFLOW.POLICY["rules"][0], "action": "shout"}]})
 
@@ -73,11 +73,11 @@ def test_the_scripted_set_covers_every_rule_and_the_near_misses() -> None:
                for d in documents("full_call")) == 1
 
 
-def test_extended_controls_are_separate_and_sdk_validated():
+def test_extended_identity_rule_uses_the_same_guidance_contract():
     mode = DialtMode.from_wire(WORKFLOW.extended_mode())
-    assert mode.policy["batch_guidance"] and mode.policy["recheck_corrections"]
-    assert mode.policy["wait_for_check"] == ["reschedule_appointment"]
-    assert "batch_guidance" not in WORKFLOW.POLICY
+    assert mode.policy["include_instructions"] and mode.policy["background_guidance"]
+    assert len(mode.policy["rules"]) == 4
+    assert all(set(rule) == {"id", "when", "do"} for rule in mode.policy["rules"])
     cases = collect_cases([EVALS / "extended"], modality="text")
     assert len(cases) == 4
     assert all(any(c["type"] == "policy_flag" for c in case.checks) for case in cases)

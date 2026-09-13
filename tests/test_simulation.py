@@ -510,8 +510,8 @@ def test_policy_drain_keeps_observers_and_replaces_corrected_speech(monkeypatch,
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
     case = SimulationCase.from_dict({
         'name': 'drain', 'starter': 'Hello',
-        'target': {'policy': {'report_checks': True, 'rules': [
-            {'id': 'r', 'when': 'A complaint', 'do': 'Escalate', 'action': 'next_turn'}]}},
+        'target': {'policy': {'rules': [
+            {'id': 'r', 'when': 'A complaint', 'do': 'Escalate'}]}},
         'limits': {'timeout_s': 10},
         'checks': [{'type': 'policy_flag', 'value': 'r', 'delivered': True}],
     })
@@ -551,8 +551,8 @@ def test_policy_asr_revision_updates_its_source_not_the_latest_user(monkeypatch,
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
     case = SimulationCase.from_dict({
         'name': 'revision', 'starter': 'Hello',
-        'target': {'policy': {'report_checks': True, 'rules': [
-            {'id': 'r', 'when': 'A complaint', 'do': 'Escalate', 'action': 'next_turn'}]}},
+        'target': {'policy': {'rules': [
+            {'id': 'r', 'when': 'A complaint', 'do': 'Escalate'}]}},
         'limits': {'timeout_s': 10},
         'checks': [{'type': 'policy_flag', 'value': 'r', 'min_count': 0, 'max_count': 0}],
     })
@@ -561,7 +561,7 @@ def test_policy_asr_revision_updates_its_source_not_the_latest_user(monkeypatch,
     assert report.check_results[0]['pass']
 
 
-def test_policy_drain_answers_dispatched_tools_without_restarting_relays(monkeypatch):
+def test_monitor_drain_answers_agent_tools_without_restarting_relays(monkeypatch):
     from types import SimpleNamespace
     def event(kind, **data):
         return SimpleNamespace(type=kind, t_ms=1, data=data)
@@ -572,7 +572,7 @@ def test_policy_drain_answers_dispatched_tools_without_restarting_relays(monkeyp
             yield event('asr', text='A manager please', policy_version=1)
             await asyncio.sleep(0.025)
             yield event('policy_flag', rule='r', occurrence_id='one:r', revision=1,
-                        status='raised', delivered=True, action='tool', tool_call_id='action-1')
+                        status='raised', delivered=True, action='next_turn')
             yield event('tool_call', id='action-1', name='request_manager', args={})
             assert len(results) == 1
             yield event('utterance', text='A manager is available.', turn_id='job-1', policy_version=2)
@@ -594,12 +594,11 @@ def test_policy_drain_answers_dispatched_tools_without_restarting_relays(monkeyp
         return next(sessions)
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
     case = SimulationCase.from_dict({
-        'name': 'late policy action', 'starter': '',
+        'name': 'agent tool during monitor drain', 'starter': '',
         'target': {'greeting': 'Hello', 'tools': [{'name': 'request_manager', 'description': 'Prepare a transfer.',
                              'parameters': {'type': 'object', 'properties': {}}}],
-                   'policy': {'report_checks': True, 'rules': [
-                       {'id': 'r', 'when': 'A manager is requested', 'action': 'tool',
-                        'tool': {'name': 'request_manager', 'arguments': {}}}]}},
+                   'policy': {'rules': [
+                       {'id': 'r', 'when': 'A manager is requested', 'do': 'Call request_manager if needed.'}]}},
         'fixtures': {'request_manager': {'result': {'available': True}}},
         'checks': [{'type': 'policy_flag', 'value': 'r', 'delivered': True},
                    {'type': 'tool_called', 'value': 'request_manager'}],

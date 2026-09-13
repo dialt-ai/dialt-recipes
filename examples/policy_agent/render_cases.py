@@ -7,8 +7,7 @@ The basic sets: `full_call/`: natural calls where the caller has a goal and, in 
 something a rule covers. `scripted/`: the caller says fixed lines, one per turn, so each case
 isolates one judgement: a positive for each rule, and the near misses that must stay quiet (a
 past episode, a relative's illness, a practical question, thanks). Cases use standard hosted
-policy_flag checks; the same assertions run locally and hosted. `extended/` covers the optional
-occurrence and tool-restriction controls.
+policy_flag checks; the same assertions run locally and hosted. `extended/` covers repeated conditions, identity concerns and near misses.
 """
 import json
 import shutil
@@ -60,7 +59,7 @@ def case(name, simulator, checks, *, patient, expect=(), forbid=None, max_turns=
         "name": name,
         "starter": "",
         "target": workflow.session_mode(),
-        "simulator": {"instructions": simulator + NO_INVENTING},
+        "simulator": {"voice": "chime", "instructions": simulator + NO_INVENTING},
         "fixtures": {"get_emergency_instructions": {"result": {
             "urgent_care_available_on_this_line": False,
             "next_step": "Hang up and call local emergency services now.",
