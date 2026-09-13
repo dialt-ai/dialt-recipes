@@ -61,8 +61,14 @@ def case(name, simulator, checks, *, patient, expect=(), forbid=None, max_turns=
         "starter": "",
         "target": workflow.session_mode(),
         "simulator": {"instructions": simulator + NO_INVENTING},
-        "fixtures": {"lookup_patient": {"result": patient}, "reschedule_appointment": MOVED},
+        "fixtures": {"get_emergency_instructions": {"result": {
+            "urgent_care_available_on_this_line": False,
+            "next_step": "Hang up and call local emergency services now.",
+            "emergency_services_contacted": False,
+        }}, "lookup_patient": {"result": patient}, "reschedule_appointment": MOVED},
         "checks": [*checks,
+                   *([{"type": "tool_called", "value": "get_emergency_instructions"}]
+                     if "emergency" in expect else []),
                    *({"type": "policy_flag", "value": rule, "delivered": True}
                      for rule in expect),
                    *({"type": "policy_flag", "value": rule, "min_count": 0, "max_count": 0}
