@@ -25,7 +25,7 @@ from dialt_recipes.cli import _credentials, collect_cases
 from workflow import HandoffState, intake_instructions, intake_tools
 
 
-async def run_case(case, url: str | None, api_key: str, modality: str) -> tuple[bool, dict]:
+async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, dict]:
     state = HandoffState()
     acks: list[dict] = []
 

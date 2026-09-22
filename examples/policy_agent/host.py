@@ -33,7 +33,7 @@ def flags_from(events: list[dict]) -> list[dict]:
             if event.get("side") == "target" and event.get("type") == "policy_flag"]
 
 
-async def run_case(document: dict, url: str | None, api_key: str, modality: str) -> tuple[bool, dict]:
+async def run_case(document: dict, url: str, api_key: str, modality: str) -> tuple[bool, dict]:
     case = SimulationCase.from_dict(document, modality=modality)
     report = await run_simulation(url, api_key, case, modality=modality)
     report.check_results = check_policy_at_hangup(case, report)

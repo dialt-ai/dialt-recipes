@@ -167,8 +167,7 @@ def test_run_call_bridge_paces_frames_and_marks(monkeypatch) -> None:
     assert 1 <= len(marks) <= 3           # a mark per 100 ms, not per frame
     assert all(len(m["media"]["payload"]) <= 216 for m in media)
     assert seen == ["audio", "done"]
-    assert holder["connect_args"] == ()
-    assert "url" not in holder["connect_kwargs"]
+    assert holder["connect_args"] == (bridge.DEFAULT_REALTIME_URL,)
 
 
 def test_host_end_call_closes_the_session_and_tool_failures_are_results(monkeypatch) -> None:

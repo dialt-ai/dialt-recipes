@@ -6,7 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from dialt.evals import EvalsClient, EvalsError, load_cases, validate_case
+from dialt import DEFAULT_REALTIME_URL
+from dialt.evals import DEFAULT_BASE_URL, EvalsClient, EvalsError, load_cases, validate_case
 from dotenv import load_dotenv
 
 from .conversation_plan import ConversationPlan
@@ -22,9 +23,9 @@ def _api_key() -> str:
     return api_key
 
 
-def _credentials() -> tuple[str | None, str]:
+def _credentials() -> tuple[str, str]:
     api_key = _api_key()
-    return os.environ.get("DIALT_URL") or None, api_key
+    return os.environ.get("DIALT_URL") or DEFAULT_REALTIME_URL, api_key
 
 
 async def _guided(path: Path) -> None:
@@ -162,8 +163,8 @@ def evals_main() -> None:
     push_cmd.add_argument("--base-url")
     args = parser.parse_args()
     api_key = _api_key()
-    base_url = args.base_url or os.environ.get("DIALT_EVALS_URL")
-    client = EvalsClient(api_key, **({"base_url": base_url} if base_url else {}))
+    base_url = args.base_url or os.environ.get("DIALT_EVALS_URL") or DEFAULT_BASE_URL
+    client = EvalsClient(api_key, base_url=base_url)
     try:
         run = push(client, args.paths, modality=args.modality, repetitions=args.repetitions,
                    wait=args.wait)

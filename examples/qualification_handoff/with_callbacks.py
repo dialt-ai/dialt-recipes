@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from dotenv import load_dotenv
+from dialt import DEFAULT_REALTIME_URL
 
 from dialt_recipes import SimulationCase, run_simulation
 
@@ -18,6 +19,8 @@ async def main() -> None:
     source = Path(__file__).with_name("evals") / "accepted_handoff.json"
     case = SimulationCase.from_dict(json.loads(source.read_text()))
     state = QualificationState()
+    fixed_reference = case.fixtures["start_handoff"]["result"]["handoff_reference"]
+    fixed_reference_pattern = spoken_reference_pattern(fixed_reference)
 
     case = replace(
         case,
@@ -26,14 +29,14 @@ async def main() -> None:
         },
         checks=tuple(
             {**check, "value": spoken_reference_pattern(state.handoff_reference)}
-            if check.get("name") == "the handoff reference reaches the caller"
+            if check.get("type") == "regex" and check.get("value") == fixed_reference_pattern
             else check
             for check in case.checks
             if check.get("type") != "fixture_complete"
         ),
     )
     report = await run_simulation(
-        os.environ.get("DIALT_URL") or None,
+        os.environ.get("DIALT_URL") or DEFAULT_REALTIME_URL,
         os.environ["DIALT_API_KEY"],
         case,
         modality=os.environ.get("DIALT_MODALITY", "text"),

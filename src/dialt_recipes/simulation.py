@@ -295,7 +295,7 @@ Observer = Callable[[SessionEvent, DialtSession], Awaitable[None]]
 ToolResultObserver = Callable[[str, dict[str, Any], Any, str, bool, DialtSession], Awaitable[None]]
 
 
-async def run_simulation(url: str | None, api_key: str, case: SimulationCase, *,
+async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                          modality: str = "text",
                          on_target_event: Observer | None = None,
                          on_target_tool_result: ToolResultObserver | None = None) -> SimulationReport:
@@ -322,13 +322,13 @@ async def run_simulation(url: str | None, api_key: str, case: SimulationCase, *,
     # Whoever has the opener speaks first: the target with target.greeting, otherwise the
     # simulated user with the starter. The other side opens silent.
     target = await DialtSession.connect(
-        **({"url": url} if url else {}), api_key=api_key, session_id=target_id,
+        url, api_key=api_key, session_id=target_id,
         mode=session_mode(case.target, modality,
                           greeting=str(case.target.get("greeting") or "").strip() or False),
     )
     try:
         simulator = await DialtSession.connect(
-            **({"url": url} if url else {}), api_key=api_key, session_id=simulator_id,
+            url, api_key=api_key, session_id=simulator_id,
             mode=session_mode(case.simulator, modality, simulator=True,
                               greeting=case.starter if modality == "voice" and case.starter else False),
         )
