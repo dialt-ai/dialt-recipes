@@ -24,7 +24,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from dialt import DialtError, DialtMode, DialtSession, float32_to_pcm16
+from dialt import DEFAULT_REALTIME_URL, DialtError, DialtMode, DialtSession, float32_to_pcm16
 from twilio.request_validator import RequestValidator
 
 from .telephony_audio import TelephonyAudioBridge
@@ -53,7 +53,7 @@ class TwilioBridgeSettings:
     dialt_api_key: str
     twilio_auth_token: str
     public_base_url: str
-    dialt_url: str = "wss://dialt.com/ws"
+    dialt_url: str = DEFAULT_REALTIME_URL
 
     def http_url(self, path: str) -> str:
         return f"{self.public_base_url.rstrip('/')}{path}"

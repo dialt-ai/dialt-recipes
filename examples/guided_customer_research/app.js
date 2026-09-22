@@ -1,4 +1,4 @@
-import { DialtClient } from 'https://cdn.jsdelivr.net/npm/@dialt/sdk@0.32.0/src/index.js';
+import { DialtClient } from 'https://cdn.jsdelivr.net/npm/@dialt/sdk@0.43.0/src/index.js';
 
 const plan = await fetch('./plan.json').then(response => response.json());
 document.querySelector('#record-as-you-go').checked = plan.record_as_you_go === true;
@@ -19,9 +19,10 @@ render();
 
 document.querySelector('#start').onclick = async () => {
   const modality = document.querySelector('#modality').value;
+  const url = document.querySelector('#url').value.trim();
   const recordAsYouGo = document.querySelector('#record-as-you-go').checked;
   const instructions = recordAsYouGo ? recordedInstructions : `${plan.objective}\nCollect these details naturally. Keep track of supported answers and corrections in the conversation, and clarify missing or ambiguous required details before finishing. Do not read the list aloud.\n${plan.fields.map(field => `- ${field.key} (${field.required === false ? 'optional' : 'required'}): ${field.description}`).join('\n')}\nWhen complete: ${plan.completion}`;
-  client = new DialtClient({url:document.querySelector('#url').value,sessionId:document.querySelector('#session').value,apiKey:document.querySelector('#key').value,mode:{kind:'dialt',modality,instructions,tools:recordAsYouGo ? [tool] : [],greeting:'Tell me about your role and the last urgent customer escalation you handled.'}});
+  client = new DialtClient({...url && {url},sessionId:document.querySelector('#session').value,apiKey:document.querySelector('#key').value,mode:{kind:'dialt',modality,instructions,tools:recordAsYouGo ? [tool] : [],greeting:'Tell me about your role and the last urgent customer escalation you handled.'}});
   client.addEventListener('asr', event => addTurn('you', event.detail.text));
   client.addEventListener('utterance', event => addTurn('assistant', event.detail.text));
   client.addEventListener('tool_call', event => {

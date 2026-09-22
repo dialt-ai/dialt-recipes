@@ -6,14 +6,13 @@ import json
 import os
 from pathlib import Path
 
-from dialt.evals import EvalsClient, EvalsError, load_cases, validate_case
+from dialt import DEFAULT_REALTIME_URL
+from dialt.evals import DEFAULT_BASE_URL, EvalsClient, EvalsError, load_cases, validate_case
 from dotenv import load_dotenv
 
 from .conversation_plan import ConversationPlan
 from .guided import GuidedAssistant
 from .simulation import SimulationCase, report_attempt, run_simulation
-
-DEFAULT_EVALS_URL = "https://dialt.com"
 
 
 def _api_key() -> str:
@@ -26,7 +25,7 @@ def _api_key() -> str:
 
 def _credentials() -> tuple[str, str]:
     api_key = _api_key()
-    return os.environ.get("DIALT_URL", "wss://dialt.com/ws"), api_key
+    return os.environ.get("DIALT_URL") or DEFAULT_REALTIME_URL, api_key
 
 
 async def _guided(path: Path) -> None:
@@ -161,9 +160,11 @@ def evals_main() -> None:
     push_cmd.add_argument("--modality", choices=["text", "voice"], default="text")
     push_cmd.add_argument("--repetitions", type=int, default=1)
     push_cmd.add_argument("--wait", action="store_true", help="poll until the run finishes")
-    push_cmd.add_argument("--base-url", default=os.environ.get("DIALT_EVALS_URL", DEFAULT_EVALS_URL))
+    push_cmd.add_argument("--base-url")
     args = parser.parse_args()
-    client = EvalsClient(_api_key(), base_url=args.base_url)
+    api_key = _api_key()
+    base_url = args.base_url or os.environ.get("DIALT_EVALS_URL") or DEFAULT_BASE_URL
+    client = EvalsClient(api_key, base_url=base_url)
     try:
         run = push(client, args.paths, modality=args.modality, repetitions=args.repetitions,
                    wait=args.wait)

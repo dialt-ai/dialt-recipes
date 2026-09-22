@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from dotenv import load_dotenv
+from dialt import DEFAULT_REALTIME_URL
 
 from dialt_recipes import SimulationCase, run_simulation
 
@@ -26,7 +27,7 @@ async def main() -> None:
 
     case = replace(case, fixtures={"check_availability": lookup, "book_appointment": book})
     report = await run_simulation(
-        os.environ.get("DIALT_URL", "wss://dialt.com/ws"),
+        os.environ.get("DIALT_URL") or DEFAULT_REALTIME_URL,
         os.environ["DIALT_API_KEY"], case, modality="text",
     )
     print(json.dumps({

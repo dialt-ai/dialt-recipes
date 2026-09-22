@@ -15,7 +15,7 @@ from functools import lru_cache
 from typing import Any
 from urllib.parse import urlsplit
 
-from dialt import DialtMode
+from dialt import DEFAULT_REALTIME_URL, DialtMode
 from dialt_recipes.twilio import (
     BridgeHooks,
     TwilioBridgeSettings,
@@ -67,7 +67,7 @@ class Settings(TwilioBridgeSettings):
             dialt_api_key=os.environ["DIALT_API_KEY"],
             twilio_auth_token=os.environ["TWILIO_AUTH_TOKEN"],
             public_base_url=os.environ["PUBLIC_BASE_URL"].rstrip("/"),
-            dialt_url=os.environ.get("DIALT_URL", "wss://dialt.com/ws"),
+            dialt_url=os.environ.get("DIALT_URL") or DEFAULT_REALTIME_URL,
             twilio_account_sid=twilio_account_sid,
             human_handoff_url=human_handoff_url,
             voice=os.environ.get("DIALT_VOICE") or None,

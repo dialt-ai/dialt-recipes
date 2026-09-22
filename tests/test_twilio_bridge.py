@@ -15,7 +15,7 @@ from dialt_recipes.telephony_audio import (
 )
 
 SETTINGS = bridge.TwilioBridgeSettings(
-    dialt_api_key="ck_test", twilio_auth_token="token", public_base_url="https://voice.example.com/")
+    dialt_api_key="dk_test", twilio_auth_token="token", public_base_url="https://voice.example.com/")
 
 
 def test_mulaw_round_trip_preserves_a_tone() -> None:
@@ -129,6 +129,8 @@ def _fake_connect(events_factory):
     holder = {}
 
     async def connect(*args, **kwargs):
+        holder["connect_args"] = args
+        holder["connect_kwargs"] = kwargs
         holder["connection"] = FakeConnection()
         return holder["connection"]
 
@@ -143,7 +145,7 @@ def test_run_call_bridge_paces_frames_and_marks(monkeypatch) -> None:
         yield SimpleNamespace(type="done", t_ms=40, data={"turn_id": "turn-1"}, audio=None)
         await released.wait()
 
-    connect, _ = _fake_connect(events)
+    connect, holder = _fake_connect(events)
     monkeypatch.setattr(bridge.DialtSession, "connect", connect)
     seen: list[str] = []
 
@@ -165,6 +167,7 @@ def test_run_call_bridge_paces_frames_and_marks(monkeypatch) -> None:
     assert 1 <= len(marks) <= 3           # a mark per 100 ms, not per frame
     assert all(len(m["media"]["payload"]) <= 216 for m in media)
     assert seen == ["audio", "done"]
+    assert holder["connect_args"] == (bridge.DEFAULT_REALTIME_URL,)
 
 
 def test_host_end_call_closes_the_session_and_tool_failures_are_results(monkeypatch) -> None:

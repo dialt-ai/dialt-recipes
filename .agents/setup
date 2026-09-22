@@ -23,10 +23,10 @@ uv sync --project examples/integrations/twilio --frozen --python 3.12
 step "Configure the local Dialt endpoints"
 if [ ! -f .env ]; then
   cp -- .env.example .env
-  sed -i 's#^DIALT_URL=.*#DIALT_URL=ws://127.0.0.1:24100/v1/realtime#' .env
   cat >> .env <<'EOF'
 
 # Amp's supervised local fake stack. Its service fills DIALT_API_KEY on first start.
+DIALT_URL=ws://127.0.0.1:24100/v1/realtime
 DIALT_EVALS_URL=http://127.0.0.1:24100
 EOF
 fi
