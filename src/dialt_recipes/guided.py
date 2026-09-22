@@ -18,11 +18,11 @@ class GuidedAssistant:
     answers: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    async def connect(cls, url: str, api_key: str, plan: ConversationPlan, *,
+    async def connect(cls, url: str | None, api_key: str, plan: ConversationPlan, *,
                       modality: str = "text", session_id: str | None = None,
                       greeting: str | bool | None = None) -> "GuidedAssistant":
         session = await DialtSession.connect(
-            url, api_key=api_key, session_id=session_id,
+            **({"url": url} if url else {}), api_key=api_key, session_id=session_id,
             mode=DialtMode(
                 modality=modality, instructions=plan.instructions(), tools=plan.tools(),
                 greeting=greeting,

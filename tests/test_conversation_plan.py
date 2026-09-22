@@ -49,6 +49,21 @@ def test_guided_controller_resolves_record_tool_with_verified_state():
     assert session.results[0][1] == {"outcome": "succeeded", "verified": True}
 
 
+def test_guided_controller_uses_sdk_endpoint_default(monkeypatch):
+    captured = {}
+
+    async def connect(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("dialt_recipes.guided.DialtSession.connect", connect)
+    assistant = asyncio.run(GuidedAssistant.connect(None, "key", plan()))
+
+    assert "url" not in captured
+    assert captured["api_key"] == "key"
+    assert assistant.session is not None
+
+
 def test_recording_can_be_disabled_without_losing_evidence_instructions():
     from dataclasses import replace
     current = replace(plan(), record_as_you_go=False)

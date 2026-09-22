@@ -55,7 +55,8 @@ def test_reference_check_accepts_a_spoken_reading() -> None:
     word "dash", digits sometimes as words. The check accepts those and still rejects a different
     or longer reference."""
     pattern = re.compile(WORKFLOW.spoken_reference_pattern("HX-2048"))
-    for spoken in ("HX-2048", "H X 2 0 4 8", "H-X-2-0-4-8", "H X dash 2 0 4 8", "H, X, two zero four eight"):
+    for spoken in ("HX-2048", "H X 2 0 4 8", "H-X-2-0-4-8", "H X dash 2 0 4 8",
+                   "H, X, two zero four eight", "H X twenty forty-eight"):
         assert pattern.search(spoken), spoken
     for other in ("HX-2049", "HX-20480", "H X two zero four eight one"):
         assert not pattern.search(other), other

@@ -22,7 +22,27 @@ QUALIFICATION_PLAN = ConversationPlan(
 
 _DIGIT_WORDS = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
                 "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
+_TEENS = {10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen",
+          15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen"}
+_TENS = {20: "twenty", 30: "thirty", 40: "forty", 50: "fifty",
+         60: "sixty", 70: "seventy", 80: "eighty", 90: "ninety"}
 _SPOKEN_GAP = r"(?:[\s,.-]|dash)*"
+
+
+def _spoken_digit_run(digits: str) -> str:
+    individual = _SPOKEN_GAP.join(f"(?:{digit}|{_DIGIT_WORDS[digit]})" for digit in digits)
+    if len(digits) % 2 or len(digits) < 4:
+        return individual
+    pairs = []
+    for offset in range(0, len(digits), 2):
+        value = int(digits[offset:offset + 2])
+        if value < 10 or 10 <= value < 20:
+            pairs.append(_DIGIT_WORDS[str(value)] if value < 10 else _TEENS[value])
+        else:
+            ones = value % 10
+            pairs.append(_TENS[value - ones]
+                         + (f"{_SPOKEN_GAP}{_DIGIT_WORDS[str(ones)]}" if ones else ""))
+    return f"(?:{individual}|{_SPOKEN_GAP.join(pairs)})"
 
 
 def spoken_reference_pattern(reference: str) -> str:
@@ -30,11 +50,11 @@ def spoken_reference_pattern(reference: str) -> str:
     spaces, hyphens, commas or the word "dash", and digits as numerals or words. A longer
     digit run does not match, so a different reference cannot pass."""
     parts = []
-    for ch in reference.upper():
-        if ch.isdigit():
-            parts.append(f"(?:{ch}|{_DIGIT_WORDS[ch]})")
-        elif ch.isalnum():
-            parts.append(re.escape(ch))
+    for token in re.findall(r"[A-Z]+|\d+", reference.upper()):
+        if token.isdigit():
+            parts.append(_spoken_digit_run(token))
+        else:
+            parts.extend(re.escape(ch) for ch in token)
     tail_digit = r"(?:\d|" + "|".join(_DIGIT_WORDS.values()) + r")\b"
     return _SPOKEN_GAP.join(parts) + f"(?!{_SPOKEN_GAP}{tail_digit})"
 

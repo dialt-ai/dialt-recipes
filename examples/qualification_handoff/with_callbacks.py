@@ -26,14 +26,14 @@ async def main() -> None:
         },
         checks=tuple(
             {**check, "value": spoken_reference_pattern(state.handoff_reference)}
-            if check.get("type") == "regex" and "2048" in check.get("value", "")
+            if check.get("name") == "the handoff reference reaches the caller"
             else check
             for check in case.checks
             if check.get("type") != "fixture_complete"
         ),
     )
     report = await run_simulation(
-        os.environ.get("DIALT_URL", "wss://dialt.com/ws"),
+        os.environ.get("DIALT_URL") or None,
         os.environ["DIALT_API_KEY"],
         case,
         modality=os.environ.get("DIALT_MODALITY", "text"),
@@ -45,10 +45,11 @@ async def main() -> None:
         "pass": not missing,
         "detail": "" if not missing else f"missing: {', '.join(missing)}",
     }
+    passed = report.passed and application_check["pass"]
     print(
         json.dumps(
             {
-                "passed": report.passed and application_check["pass"],
+                "passed": passed,
                 "qualification": state.answers,
                 "application_events": state.events,
                 "checks": [application_check, *report.check_results],
@@ -61,6 +62,8 @@ async def main() -> None:
             indent=2,
         )
     )
+    if not passed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

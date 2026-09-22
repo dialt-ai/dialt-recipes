@@ -2,6 +2,7 @@ from dataclasses import replace
 import asyncio
 import json
 from pathlib import Path
+import re
 
 import pytest
 from dialt.relay import TextTurnRelay
@@ -96,7 +97,10 @@ def test_case_uses_the_hosted_document_shape():
     assert case.simulator_instructions.startswith("You are Maya")
     assert case.max_turns == 10 and case.timeout_s == 240 and case.silence_s == 35
     assert [check["type"] for check in case.checks] == [
-        "tool_called", "tool_called", "contains", "judge"]
+        "tool_called", "tool_called", "regex", "judge"]
+    confirmation = re.compile(case.checks[2]["value"], re.IGNORECASE)
+    assert confirmation.search("Your code is P T, two zero four eight.")
+    assert not confirmation.search("Your code is P T, two zero four nine.")
 
     with pytest.raises(ValueError, match="target.instructions"):
         SimulationCase.from_dict({"name": "old", "starter": "hi", "target_instructions": "x"})
@@ -400,9 +404,9 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
     assert session_mode({"end_call": False}, "text").end_call is False
     conditioned = session_mode({"end_call": {"when": "the caller says goodbye"}}, "text")
     assert conditioned.end_call is True and conditioned.end_call_when == "the caller says goodbye"
-    tuned = session_mode({"turn_end_threshold": 0.2, "silence_nudge_s": 8, "silence_end_s": 20,
+    tuned = session_mode({"silence_nudge_s": 8, "silence_end_s": 20,
                           "tools": [{"name": "book"}], "tool_choice": {"tool": "book"}}, "voice")
-    assert tuned.turn_end_threshold == 0.2 and (tuned.silence_nudge_s, tuned.silence_end_s) == (8, 20)
+    assert (tuned.silence_nudge_s, tuned.silence_end_s) == (8, 20)
     assert tuned.tool_choice == {"tool": "book"} and tuned.greeting is False
     default = session_mode({}, "voice")
     assert (default.silence_nudge_s, default.silence_end_s) == (
@@ -411,6 +415,8 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
                           simulator=True, greeting="Hello?")
     assert caller.voice == "ember" and caller.tools is None and caller.end_call is True
     assert caller.greeting == "Hello?"
+    with pytest.raises(ValueError, match="unexpected field: turn_end_threshold"):
+        session_mode({"turn_end_threshold": 0.2}, "voice")
     with pytest.raises(ValueError, match="unexpected field: persona"):
         session_mode({"persona": "x"}, "text")
     with pytest.raises(ValueError, match="simulator.tools is set by the run"):

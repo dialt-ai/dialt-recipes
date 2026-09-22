@@ -26,7 +26,7 @@ async def main() -> None:
 
     case = replace(case, fixtures={"check_availability": lookup, "book_appointment": book})
     report = await run_simulation(
-        os.environ.get("DIALT_URL", "wss://dialt.com/ws"),
+        os.environ.get("DIALT_URL") or None,
         os.environ["DIALT_API_KEY"], case, modality="text",
     )
     print(json.dumps({

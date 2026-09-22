@@ -29,5 +29,5 @@ jobs:
       - name: Run two ordinary Dialt sessions
         env:
           DIALT_API_KEY: ${{ secrets.DIALT_API_KEY }}
-          DIALT_URL: ${{ vars.DIALT_URL || 'wss://dialt.com/ws' }}
+          DIALT_URL: ${{ vars.DIALT_URL }}
         run: uv run dialt-sim examples/simulations/appointment_booking.json --modality "${{ inputs.modality }}"

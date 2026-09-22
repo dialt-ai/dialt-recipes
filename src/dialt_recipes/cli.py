@@ -13,8 +13,6 @@ from .conversation_plan import ConversationPlan
 from .guided import GuidedAssistant
 from .simulation import SimulationCase, report_attempt, run_simulation
 
-DEFAULT_EVALS_URL = "https://dialt.com"
-
 
 def _api_key() -> str:
     load_dotenv()
@@ -24,9 +22,9 @@ def _api_key() -> str:
     return api_key
 
 
-def _credentials() -> tuple[str, str]:
+def _credentials() -> tuple[str | None, str]:
     api_key = _api_key()
-    return os.environ.get("DIALT_URL", "wss://dialt.com/ws"), api_key
+    return os.environ.get("DIALT_URL") or None, api_key
 
 
 async def _guided(path: Path) -> None:
@@ -161,9 +159,11 @@ def evals_main() -> None:
     push_cmd.add_argument("--modality", choices=["text", "voice"], default="text")
     push_cmd.add_argument("--repetitions", type=int, default=1)
     push_cmd.add_argument("--wait", action="store_true", help="poll until the run finishes")
-    push_cmd.add_argument("--base-url", default=os.environ.get("DIALT_EVALS_URL", DEFAULT_EVALS_URL))
+    push_cmd.add_argument("--base-url")
     args = parser.parse_args()
-    client = EvalsClient(_api_key(), base_url=args.base_url)
+    api_key = _api_key()
+    base_url = args.base_url or os.environ.get("DIALT_EVALS_URL")
+    client = EvalsClient(api_key, **({"base_url": base_url} if base_url else {}))
     try:
         run = push(client, args.paths, modality=args.modality, repetitions=args.repetitions,
                    wait=args.wait)

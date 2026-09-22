@@ -67,7 +67,7 @@ uv run dialt-guided examples/guided_customer_research/plan.json
 
 The browser example supports text and voice with the same plan. Recording is off by default; enable it to show structured evidence live.
 Serve the repository directory, open the example, and paste a short-lived scoped session key (not
-a persistent `ck_` key).
+a persistent `ck_` or `dk_` account key).
 
 ## Evals: run cases locally, then push them
 
