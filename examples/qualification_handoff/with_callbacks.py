@@ -11,7 +11,7 @@ from dialt import DEFAULT_REALTIME_URL
 
 from dialt_recipes import SimulationCase, run_simulation
 
-from workflow import QualificationState, spoken_reference_pattern
+from workflow import QualificationState, assistant_spoken_reference_pattern
 
 
 async def main() -> None:
@@ -20,7 +20,7 @@ async def main() -> None:
     case = SimulationCase.from_dict(json.loads(source.read_text()))
     state = QualificationState()
     fixed_reference = case.fixtures["start_handoff"]["result"]["handoff_reference"]
-    fixed_reference_pattern = spoken_reference_pattern(fixed_reference)
+    fixed_reference_pattern = assistant_spoken_reference_pattern(fixed_reference)
 
     case = replace(
         case,
@@ -28,7 +28,7 @@ async def main() -> None:
             "start_handoff": state.start_handoff,
         },
         checks=tuple(
-            {**check, "value": spoken_reference_pattern(state.handoff_reference)}
+            {**check, "value": assistant_spoken_reference_pattern(state.handoff_reference)}
             if check.get("type") == "regex" and check.get("value") == fixed_reference_pattern
             else check
             for check in case.checks

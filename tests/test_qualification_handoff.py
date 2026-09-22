@@ -47,7 +47,7 @@ def test_accepted_case_has_deterministic_completion_checks() -> None:
         "regex",
     ]
     assert case["fixtures"]["start_handoff"]["result"]["handoff_reference"] == "HX-2048"
-    assert case["checks"][1]["value"] == WORKFLOW.spoken_reference_pattern("HX-2048")
+    assert case["checks"][1]["value"] == WORKFLOW.assistant_spoken_reference_pattern("HX-2048")
 
 
 def test_reference_check_accepts_a_spoken_reading() -> None:
@@ -56,10 +56,17 @@ def test_reference_check_accepts_a_spoken_reading() -> None:
     or longer reference."""
     pattern = re.compile(WORKFLOW.spoken_reference_pattern("HX-2048"))
     for spoken in ("HX-2048", "H X 2 0 4 8", "H-X-2-0-4-8", "H X dash 2 0 4 8",
-                   "H, X, two zero four eight", "H X twenty forty-eight"):
+                   "H, X, two zero four eight", "H X twenty forty-eight",
+                   "H X twenty forty-eight for your records"):
         assert pattern.search(spoken), spoken
-    for other in ("HX-2049", "HX-20480", "H X two zero four eight one"):
+    for other in ("HX-2049", "HX-20480", "HX-204800", "HX-2048A",
+                  "H X two zero four eight one", "H X twenty forty-eight twelve",
+                  "H X twenty forty-eight oh one"):
         assert not pattern.search(other), other
+
+    leading_zero = re.compile(WORKFLOW.spoken_reference_pattern("HX-2008"))
+    assert leading_zero.search("H X two zero zero eight")
+    assert not leading_zero.search("H X twenty eight")
 
 
 def test_qualification_state_records_corrections_and_handoff() -> None:

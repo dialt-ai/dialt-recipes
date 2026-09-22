@@ -67,7 +67,7 @@
     },
     {
       "type": "regex",
-      "value": "H(?:[\\s,.-]|dash)*X(?:[\\s,.-]|dash)*(?:(?:2|two)(?:[\\s,.-]|dash)*(?:0|zero)(?:[\\s,.-]|dash)*(?:4|four)(?:[\\s,.-]|dash)*(?:8|eight)|twenty(?:[\\s,.-]|dash)*forty(?:[\\s,.-]|dash)*eight)(?!(?:[\\s,.-]|dash)*(?:\\d|zero|one|two|three|four|five|six|seven|eight|nine)\\b)",
+      "value": "(?:^|\\n)assistant:[^\\n]*H(?:[\\s,.-]|dash)*X(?:[\\s,.-]|dash)*(?:(?:2|two)(?:[\\s,.-]|dash)*(?:0|zero)(?:[\\s,.-]|dash)*(?:4|four)(?:[\\s,.-]|dash)*(?:8|eight)|twenty(?:[\\s,.-]|dash)*forty(?:[\\s,.-]|dash)*eight)(?!(?:[\\s,.-]|dash)*(?:\\d+|oh|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\\b)(?![A-Za-z0-9])",
       "name": "the handoff reference reaches the caller"
     },
     {

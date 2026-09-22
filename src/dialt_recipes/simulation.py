@@ -160,7 +160,11 @@ def evaluate_checks(case: SimulationCase, report: SimulationReport) -> list[dict
     """The deterministic checks, with the hosted runner's semantics. Judge checks are skipped."""
     results: list[dict[str, Any]] = []
     assistant = report.assistant_text()
-    transcript = "\n".join(f"{turn['role']}: {turn['text']}" for turn in report.transcript)
+    transcript = "\n".join(
+        f"{turn['role']}: "
+        + str(turn["text"]).replace("\r", " ").replace("\n", " ")
+        for turn in report.transcript
+    )
     called = {
         str(event.get("name"))
         for event in report.events

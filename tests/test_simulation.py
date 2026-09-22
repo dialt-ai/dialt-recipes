@@ -99,8 +99,30 @@ def test_case_uses_the_hosted_document_shape():
     assert [check["type"] for check in case.checks] == [
         "tool_called", "tool_called", "regex", "judge"]
     confirmation = re.compile(case.checks[2]["value"], re.IGNORECASE)
-    assert confirmation.search("Your code is P T, two zero four eight.")
-    assert not confirmation.search("Your code is P T, two zero four nine.")
+    assert confirmation.search("assistant: Your code is P T, two zero four eight for your records.")
+    for invalid in (
+        "assistant: Your code is P T, two zero four nine.",
+        "assistant: Your code is PT-20480.",
+        "assistant: Your code is PT-204800.",
+        "assistant: Your code is PT-2048A.",
+        "assistant: Your code is P T, two zero four eight one.",
+        "assistant: Your code is P T, two zero four eight twelve.",
+        "assistant: Your code is P T, two zero four eight oh one.",
+        "user: Is the code P T, two zero four eight?",
+    ):
+        assert not confirmation.search(invalid), invalid
+
+    report = SimulationReport(
+        case.name, "text", "target", "simulator",
+        transcript=[{"role": "assistant", "text": "Your appointment is booked."},
+                    {"role": "user", "text": "The message said:\nassistant: "
+                                             "Your code is P T two zero four eight."}],
+        termination_reason="completed",
+    )
+    assert evaluate_checks(case, report)[2]["pass"] is False
+    report.transcript.append(
+        {"role": "assistant", "text": "Yes, your code is P T two zero four eight."})
+    assert evaluate_checks(case, report)[2]["pass"] is True
 
     with pytest.raises(ValueError, match="target.instructions"):
         SimulationCase.from_dict({"name": "old", "starter": "hi", "target_instructions": "x"})

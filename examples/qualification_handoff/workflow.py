@@ -26,12 +26,14 @@ _TEENS = {10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen",
           15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen"}
 _TENS = {20: "twenty", 30: "thirty", 40: "forty", 50: "fifty",
          60: "sixty", 70: "seventy", 80: "eighty", 90: "ninety"}
+_NUMBER_WORDS = ("oh", *_DIGIT_WORDS.values(), *_TEENS.values(), *_TENS.values())
 _SPOKEN_GAP = r"(?:[\s,.-]|dash)*"
 
 
 def _spoken_digit_run(digits: str) -> str:
     individual = _SPOKEN_GAP.join(f"(?:{digit}|{_DIGIT_WORDS[digit]})" for digit in digits)
-    if len(digits) % 2 or len(digits) < 4:
+    if (len(digits) % 2 or len(digits) < 4
+            or any(digits[offset] == "0" for offset in range(0, len(digits), 2))):
         return individual
     pairs = []
     for offset in range(0, len(digits), 2):
@@ -55,8 +57,14 @@ def spoken_reference_pattern(reference: str) -> str:
             parts.append(_spoken_digit_run(token))
         else:
             parts.extend(re.escape(ch) for ch in token)
-    tail_digit = r"(?:\d|" + "|".join(_DIGIT_WORDS.values()) + r")\b"
-    return _SPOKEN_GAP.join(parts) + f"(?!{_SPOKEN_GAP}{tail_digit})"
+    numeric_continuation = r"(?:\d+|" + "|".join(_NUMBER_WORDS) + r")\b"
+    return (_SPOKEN_GAP.join(parts)
+            + f"(?!{_SPOKEN_GAP}{numeric_continuation})(?![A-Za-z0-9])")
+
+
+def assistant_spoken_reference_pattern(reference: str) -> str:
+    """Match a spoken reference delivered by the assistant within one transcript turn."""
+    return rf"(?:^|\n)assistant:[^\n]*{spoken_reference_pattern(reference)}"
 
 
 @dataclass
