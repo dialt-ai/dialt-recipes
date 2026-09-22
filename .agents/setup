@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIALT_ROOT="${DIALT_ROOT:-$(dirname "$REPO_ROOT")/repos/dialt}"
+
+step() {
+  printf '\n==> %s\n' "$1"
+}
+
+step "Prepare the Dialt application checkout"
+test -x "$DIALT_ROOT/.agents/setup" || {
+  echo "Dialt must be configured as an additional repository at $DIALT_ROOT" >&2
+  exit 1
+}
+"$DIALT_ROOT/.agents/setup"
+
+step "Install locked recipe dependencies"
+cd "$REPO_ROOT"
+uv sync --frozen --python 3.12
+uv sync --project examples/integrations/twilio --frozen --python 3.12
+
+step "Configure the local Dialt endpoints"
+if [ ! -f .env ]; then
+  cp -- .env.example .env
+  sed -i 's#^DIALT_URL=.*#DIALT_URL=ws://127.0.0.1:24100/v1/realtime#' .env
+  cat >> .env <<'EOF'
+
+# Amp's supervised local fake stack. Its service fills DIALT_API_KEY on first start.
+DIALT_EVALS_URL=http://127.0.0.1:24100
+EOF
+fi
+
+step "Verify the prepared toolchain"
+test -x .venv/bin/python
+test -x examples/integrations/twilio/.venv/bin/python
+uv run python -c 'import dialt_recipes, dialt'
+printf 'Orb setup complete.\n'
