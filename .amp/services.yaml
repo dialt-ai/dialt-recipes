@@ -1,0 +1,36 @@
+services:
+  app:
+    command: dev/orb-portal-gateway.sh
+    env:
+      DIALT_STACK_PORT: "24100"
+      DIALT_API_ORIGIN: ${services.api.publicURL}
+    portal:
+      url: /playground
+      title: Dialt
+      description: "Local fake stack for exercising recipes. Sign in as demo@dialt.com with password: password."
+    portals:
+      - url: /django-admin/
+        title: Django admin
+        description: "Sign in as team@dialt.com with password: password."
+    review: true
+    agent: control
+    platforms: [linux]
+  api:
+    command: dev/orb-portal-gateway.sh
+    env:
+      DIALT_STACK_PORT: "24100"
+    portal:
+      url: /v1/voices
+      title: Dialt API
+      description: Machine API surface for the local fake stack.
+    review: false
+    agent: observe
+    platforms: [linux]
+  stack:
+    command: dev/orb-stack-service.sh
+    port: 24100
+    health: /api/app/config
+    env:
+      DIALT_PUBLIC_BASE_URL: ${services.app.publicURL}
+      DIALT_PUBLIC_API_URL: ${services.api.publicURL}
+    platforms: [linux]
