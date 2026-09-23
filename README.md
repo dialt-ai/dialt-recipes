@@ -31,6 +31,10 @@ idempotency, and call status in the application; the model cannot choose a desti
 another call. The CLI validates by default and requires an explicit flag before contacting
 Twilio. This is a single-call reference, not a campaign runner or bulk dialer.
 
+Before live use, complete the [jurisdiction-specific deployment decisions](OUTBOUND_CALLING_COMPLIANCE.md)
+for the caller, recipient, and call purpose. The examples are not legal advice or compliance
+certification; their defaults and passing tests do not authorize worldwide calling.
+
 ## Install
 
 ```sh

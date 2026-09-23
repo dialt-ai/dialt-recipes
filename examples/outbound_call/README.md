@@ -32,6 +32,12 @@ Twilio transport status and the conversation's business outcome separately.
 
 ## Configure it
 
+First complete the [jurisdiction-specific deployment decisions](../../OUTBOUND_CALLING_COMPLIANCE.md)
+for the planned caller/recipient regions and call purpose, including a bounded profile for live
+testing. The guide separates existing recipe checks from application controls still needed.
+Neither this recipe nor its country/time defaults certify legal compliance; it does not enforce
+the guide's approval record. Keep unreviewed deployments disabled in your application.
+
 Live testing needs an **upgraded Twilio account**, not a trial: Twilio's
 [trial restrictions](https://www.twilio.com/docs/usage/trials/try-out-voice#blocked-verbs)
 block `<Stream>`, which this recipe requires for the Dialt audio connection. Use a purchased,
@@ -274,6 +280,11 @@ Live calls are intentionally never part of the automated test suite. Keep the PR
 the following checks have been completed with the tester. Hosted text/voice evals and real calls
 incur usage; arrange them explicitly. Record the commit tested, pass/fail, and sanitized evidence
 in the PR. Keep credentials, phone numbers, appointment details, and recordings out of the PR.
+
+Before the steps below, record approval of the bounded test profile using the
+[deployment decision record](../../OUTBOUND_CALLING_COMPLIANCE.md#decision-record-for-each-deployment-profile).
+Keep evidence in a controlled system and share only a sanitized reference and review outcome in
+the PR. Approval for this test does not approve other countries, purposes, or production usage.
 
 1. Run the offline tests and the seven generated conversation cases in text, then voice. Review
    transcripts for disclosure ordering, tool failures, and unsupported promises, not just scores.
