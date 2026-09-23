@@ -8,9 +8,8 @@ import uuid
 from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable
 
-import httpx
 from dialt import DialtMode, DialtSession, SessionEvent
-from dialt.evals import EvalsError, validate_case
+from dialt.evals import EvalsClient, validate_case
 from dialt.policy import PolicyEvidence
 from dialt.relay import (
     SIMULATION_SILENCE_END_S,
@@ -226,8 +225,10 @@ def session_mode(config: dict[str, Any], modality: str, *, simulator: bool = Fal
     policy when the case is silent on it, so the watchdog rather than the production
     nudge/sign-off ends a quiet call."""
     overrides: dict[str, Any] = {"greeting": greeting}
+    if config.get("voice") is None:
+        overrides["voice"] = "classic" if simulator else "circuit"
     if simulator:
-        overrides.update(tools=None, tool_choice=None, web_search=False,
+        overrides.update(brain="genius", tools=None, tool_choice=None, web_search=False,
                          end_call=True, end_call_when=None)
     elif "end_call" not in config:
         overrides["end_call"] = True
@@ -334,7 +335,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         simulator = await DialtSession.connect(
             url, api_key=api_key, session_id=simulator_id,
             mode=session_mode(case.simulator, modality, simulator=True,
-                              greeting=case.starter if modality == "voice" and case.starter else False),
+                              greeting=case.starter or False),
         )
     except Exception:
         await target.close()
@@ -577,8 +578,6 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         asyncio.create_task(watchdog()),
     ]
     try:
-        if modality == "text" and case.starter:
-            await target.send_text(case.starter)
         for mic in voice_relays.values():
             mic.start()          # both lines are live from the first moment, before anyone speaks
         try:
@@ -627,15 +626,5 @@ async def report_attempt(base_url: str, api_key: str, run_id: str, case_id: str,
         "judge_results": [r for r in report.check_results if r.get("skipped")],
         "termination_reason": report.termination_reason, "error": report.error,
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{base_url.rstrip('/')}/api/app/evals/runs/{run_id}/report",
-            headers={"Authorization": f"Bearer {api_key}"}, json=payload,
-        )
-        if response.is_error:
-            try:
-                detail = response.json().get("error") or response.json().get("detail")
-            except ValueError:
-                detail = response.text[:500]
-            raise EvalsError(response.status_code, str(detail or "report rejected"))
-        return response.json()
+    client = EvalsClient(api_key, base_url=base_url)
+    return await asyncio.to_thread(client.report_run, run_id, payload)

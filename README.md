@@ -29,6 +29,9 @@ uv sync
 cp .env.example .env
 ```
 
+Python recipes require `dialt-sdk>=0.37.0`; the browser example uses `@dialt/sdk@0.45.0`.
+They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
+
 ## Qualification and specialist handoff
 
 [`examples/qualification_handoff`](examples/qualification_handoff) collects configurable qualification fields, handles corrections, obtains explicit consent, and calls a customer-owned specialist handoff. It includes text and voice eval cases plus Python callback seams, and reuses the maintained Twilio bridge for live calls.
@@ -104,7 +107,15 @@ hosted case instead of duplicating it; the run appears on the
 
 ```sh
 uv run dialt-evals push examples/simulations/ --modality text --wait
+uv run dialt-evals push examples/simulations/ --modality text --targets dialt dialt-smart dialt-genius --wait
 ```
+
+Local simulations explicitly default the assistant to Circuit and the simulated caller to Irish
+Male (`classic`), preserving case-specific voices. A `starter` is the caller's greeting in both
+text and voice, so both sides receive it through the conversation relay; it is limited to 300
+characters. Local simulations use Fast for the assistant and Genius for the simulated caller.
+Hosted comparisons select assistant tiers through `--targets`; tier selection belongs to the run,
+so case documents do not set `target.brain` or `simulator.brain`.
 
 With `--wait` the command exits non-zero unless the run passes, so it can gate a CI job in your
 agent's repository: put `DIALT_API_KEY` in a secret and run it on every change to the agent or

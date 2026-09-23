@@ -127,7 +127,7 @@ def simulation_main() -> None:
 
 
 def push(client: EvalsClient, paths: list[Path], *, modality: str, repetitions: int,
-         wait: bool, out=print) -> dict:
+         wait: bool, targets: list[str] | None = None, out=print) -> dict:
     """Upsert every case, start one hosted run over them, print the dashboard link."""
     documents = []
     for path in paths:
@@ -140,7 +140,7 @@ def push(client: EvalsClient, paths: list[Path], *, modality: str, repetitions: 
     out(f"{len(cases)} case{'s' if len(cases) != 1 else ''} pushed: "
         + ", ".join(case["name"] for case in cases))
     run = client.start_run([case["id"] for case in cases], modality=modality,
-                           repetitions=repetitions)
+                           repetitions=repetitions, **({"targets": targets} if targets is not None else {}))
     out(f"run {run['id'][:8]} started ({modality}): {client.dashboard_url(run['id'])}")
     if not wait:
         return run
@@ -159,6 +159,7 @@ def evals_main() -> None:
     push_cmd.add_argument("paths", type=Path, nargs="+", metavar="CASE_OR_DIR")
     push_cmd.add_argument("--modality", choices=["text", "voice"], default="text")
     push_cmd.add_argument("--repetitions", type=int, default=1)
+    push_cmd.add_argument("--targets", nargs="+", help="Target IDs, such as dialt dialt-smart dialt-genius")
     push_cmd.add_argument("--wait", action="store_true", help="poll until the run finishes")
     push_cmd.add_argument("--base-url")
     args = parser.parse_args()
@@ -167,7 +168,7 @@ def evals_main() -> None:
     client = EvalsClient(api_key, base_url=base_url)
     try:
         run = push(client, args.paths, modality=args.modality, repetitions=args.repetitions,
-                   wait=args.wait)
+                   wait=args.wait, targets=args.targets)
     except (EvalsError, ValueError, TimeoutError) as exc:
         raise SystemExit(str(exc)) from None
     if args.wait and run.get("status") != "passed":
