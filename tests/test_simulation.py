@@ -369,7 +369,8 @@ def test_push_upserts_then_starts_one_run(tmp_path):
             self.calls.append(("upsert", [d["name"] for d in documents]))
             return [{"id": f"id-{d['name']}", "name": d["name"]} for d in documents]
 
-        def start_run(self, case_ids, *, modality, repetitions):
+        def start_run(self, case_ids, *, modality, repetitions, targets=None):
+            self.targets = targets
             self.calls.append(("run", case_ids, modality, repetitions))
             return {"id": "run-1234abcd", "status": "queued"}
 
@@ -394,26 +395,30 @@ def test_push_upserts_then_starts_one_run(tmp_path):
     assert lines[0] == "2 cases pushed: a, b"
     assert lines[1] == "run run-1234 started (voice): https://example.test/evals/run-1234abcd"
     assert lines[-1] == "run run-1234 passed"
+    push(client, [tmp_path], modality="text", repetitions=1, wait=False,
+         targets=["dialt-smart", "dialt-genius"], out=lines.append)
+    assert client.targets == ["dialt-smart", "dialt-genius"]
 
 
-def test_bridge_and_final_are_one_turn_and_voice_starters_are_checked():
+def test_bridge_and_final_are_one_turn_and_starters_are_checked():
     transcript = [{"role": "user", "text": "hi"},
                   {"role": "assistant", "text": "Let me check.", "turn": "turn1"},
                   {"role": "assistant", "text": "Tuesday.", "turn": "turn1"},
                   {"role": "assistant", "text": "Else?", "turn": "turn2"},
                   {"role": "assistant", "text": "legacy entry"}]
     assert assistant_turns(transcript) == 3
-    case = SimulationCase.from_dict({"name": "n", "starter": "I need help. " * 40})
+    case = SimulationCase.from_dict({"name": "n", "starter": "I need help."})
     assert case.max_turns == 20
-    with pytest.raises(ValueError, match="300 characters"):
-        SimulationCase.from_dict({"name": "n", "starter": "I need help. " * 40}, modality="voice")
+    for modality in (None, "text", "voice"):
+        with pytest.raises(ValueError, match="300 characters"):
+            SimulationCase.from_dict({"name": "n", "starter": "I need help. " * 40}, modality=modality)
 
 
-def test_dialt_sim_checks_voice_starters_before_running(tmp_path):
+def test_dialt_sim_checks_starters_before_running(tmp_path):
     (tmp_path / "long.json").write_text(json.dumps({"name": "long", "starter": "I need help. " * 40}))
-    assert collect_cases([tmp_path], "text")[0].name == "long"
-    with pytest.raises(SystemExit, match="300 characters"):
-        collect_cases([tmp_path], "voice")
+    for modality in ("text", "voice"):
+        with pytest.raises(SystemExit, match="300 characters"):
+            collect_cases([tmp_path], modality)
 
 
 def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> None:
@@ -423,6 +428,14 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
     from dialt_recipes.simulation import session_mode
 
     assert session_mode({}, "text").end_call is True
+    for modality in ("text", "voice"):
+        for config in ({}, {"voice": None}):
+            assert session_mode(config, modality).to_wire()["voice"] == "circuit"
+            assert session_mode(config, modality, simulator=True).to_wire()["voice"] == "classic"
+            assert session_mode(config, modality, simulator=True).brain == "genius"
+        for voice in ("circuit", "classic", "chime"):
+            assert session_mode({"voice": voice}, modality).voice == voice
+            assert session_mode({"voice": voice}, modality, simulator=True).voice == voice
     assert session_mode({"end_call": False}, "text").end_call is False
     conditioned = session_mode({"end_call": {"when": "the caller says goodbye"}}, "text")
     assert conditioned.end_call is True and conditioned.end_call_when == "the caller says goodbye"
