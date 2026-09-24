@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Inbound Twilio Media Streams reference bridge for Dialt."
 requires-python = ">=3.11"
 dependencies = [
-    "dialt-sdk>=0.37.0",
+    "dialt-sdk>=0.38.1",
     "dialt-recipes @ git+https://github.com/dialt-ai/dialt-recipes.git",
     "fastapi>=0.115",
     "numpy>=1.26",

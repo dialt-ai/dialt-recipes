@@ -29,7 +29,7 @@ uv sync
 cp .env.example .env
 ```
 
-Python recipes require `dialt-sdk>=0.37.0`; the browser example uses `@dialt/sdk@0.45.0`.
+Python recipes require `dialt-sdk>=0.38.1`; the browser example uses `@dialt/sdk@0.46.0`.
 They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
 
 ## Qualification and specialist handoff
@@ -107,13 +107,13 @@ hosted case instead of duplicating it; the run appears on the
 
 ```sh
 uv run dialt-evals push examples/simulations/ --modality text --wait
-uv run dialt-evals push examples/simulations/ --modality text --targets dialt dialt-smart dialt-genius --wait
+uv run dialt-evals push examples/simulations/ --modality text --targets dialt dialt-smart --wait
 ```
 
 Local simulations explicitly default the assistant to Circuit and the simulated caller to Irish
 Male (`classic`), preserving case-specific voices. A `starter` is the caller's greeting in both
 text and voice, so both sides receive it through the conversation relay; it is limited to 300
-characters. Local simulations use Fast for the assistant and Genius for the simulated caller.
+characters. Local simulations use Fast for the assistant and Smart for the simulated caller.
 Hosted comparisons select assistant tiers through `--targets`; tier selection belongs to the run,
 so case documents do not set `target.brain` or `simulator.brain`.
 

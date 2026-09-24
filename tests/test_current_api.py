@@ -71,4 +71,4 @@ def test_caller_owns_starter_in_both_modalities(monkeypatch, modality):
     asyncio.run(run_simulation("ws://example.test", "fake-key", case, modality=modality))
     assert modes[0].greeting is False
     assert modes[1].greeting == "Hello there."
-    assert (modes[0].voice, modes[1].voice, modes[1].brain) == ("circuit", "classic", "genius")
+    assert (modes[0].voice, modes[1].voice, modes[1].brain) == ("circuit", "classic", "smart")

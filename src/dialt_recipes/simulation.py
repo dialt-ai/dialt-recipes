@@ -228,7 +228,7 @@ def session_mode(config: dict[str, Any], modality: str, *, simulator: bool = Fal
     if config.get("voice") is None:
         overrides["voice"] = "classic" if simulator else "circuit"
     if simulator:
-        overrides.update(brain="genius", tools=None, tool_choice=None, web_search=False,
+        overrides.update(brain="smart", tools=None, tool_choice=None, web_search=False,
                          end_call=True, end_call_when=None)
     elif "end_call" not in config:
         overrides["end_call"] = True
@@ -316,7 +316,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
     receive and relay processing continue while it waits.
 
     In voice mode each session gets a virtual microphone into the other: a paced stream that
-    runs for the whole call, carrying the other side's audio at real time and line noise in
+    runs for the whole call, carrying the other side's audio at real time and digital silence in
     between, so each broker endpoints on trailing silence as on a phone line. Audio is never
     opened on a sound device or written to an output file.
     """
