@@ -159,7 +159,7 @@ def evals_main() -> None:
     push_cmd.add_argument("paths", type=Path, nargs="+", metavar="CASE_OR_DIR")
     push_cmd.add_argument("--modality", choices=["text", "voice"], default="text")
     push_cmd.add_argument("--repetitions", type=int, default=1)
-    push_cmd.add_argument("--targets", nargs="+", help="Target IDs, such as dialt dialt-smart dialt-genius")
+    push_cmd.add_argument("--targets", nargs="+", help="Target IDs, such as dialt dialt-smart")
     push_cmd.add_argument("--wait", action="store_true", help="poll until the run finishes")
     push_cmd.add_argument("--base-url")
     args = parser.parse_args()

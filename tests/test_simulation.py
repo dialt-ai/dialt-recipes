@@ -161,7 +161,8 @@ class _FakeSession:
         pass
 
 
-def test_voice_mics_run_for_the_whole_call_and_answer_a_barge_like_a_client(monkeypatch):
+@pytest.mark.parametrize("capture_warning", [False, True])
+def test_voice_mics_run_for_the_whole_call_and_answer_a_barge_like_a_client(monkeypatch, capture_warning):
     """Both virtual mics start before anyone speaks and have no turn API for the runner to
     call. This side's `interrupted` is answered with the mic's playback_stopped report on this
     side's own socket, `canceled` reaches the mic, and the broker's corrected utterance (the
@@ -183,6 +184,11 @@ def test_voice_mics_run_for_the_whole_call_and_answer_a_barge_like_a_client(monk
         SimpleNamespace(type="working", t_ms=2, data={"active": True}),
         SimpleNamespace(type="done", t_ms=3, data={"turn_id": "turn-1"}),
     ])
+    if capture_warning:
+        for session in (target, simulator):
+            session._events.insert(0, SimpleNamespace(type="silent_mic", t_ms=0, data={
+                "reason": "digital_silence", "duration_ms": 4000, "peak": 0,
+            }))
     target.client_events, simulator.client_events = [], []
     sessions = iter([target, simulator])
     relays = []
@@ -396,8 +402,8 @@ def test_push_upserts_then_starts_one_run(tmp_path):
     assert lines[1] == "run run-1234 started (voice): https://example.test/evals/run-1234abcd"
     assert lines[-1] == "run run-1234 passed"
     push(client, [tmp_path], modality="text", repetitions=1, wait=False,
-         targets=["dialt-smart", "dialt-genius"], out=lines.append)
-    assert client.targets == ["dialt-smart", "dialt-genius"]
+         targets=["dialt", "dialt-smart"], out=lines.append)
+    assert client.targets == ["dialt", "dialt-smart"]
 
 
 def test_bridge_and_final_are_one_turn_and_starters_are_checked():
@@ -432,7 +438,7 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
         for config in ({}, {"voice": None}):
             assert session_mode(config, modality).to_wire()["voice"] == "circuit"
             assert session_mode(config, modality, simulator=True).to_wire()["voice"] == "classic"
-            assert session_mode(config, modality, simulator=True).brain == "genius"
+            assert session_mode(config, modality, simulator=True).brain == "smart"
         for voice in ("circuit", "classic", "chime"):
             assert session_mode({"voice": voice}, modality).voice == voice
             assert session_mode({"voice": voice}, modality, simulator=True).voice == voice
