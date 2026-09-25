@@ -22,6 +22,19 @@ uv sync --frozen
 uv run pytest -q
 ```
 
+## Outbound Twilio call
+
+[`examples/outbound_call`](examples/outbound_call) places one pre-authorized service-appointment
+reminder through Twilio and connects the answered call to Dialt over the same maintained Media
+Streams transport. It keeps dialing, consent and suppression checks, recipient context,
+idempotency, and call status in the application; the model cannot choose a destination or place
+another call. The CLI validates by default and requires an explicit flag before contacting
+Twilio. This is a single-call reference, not a campaign runner or bulk dialer.
+
+Before live use, complete the [jurisdiction-specific deployment decisions](OUTBOUND_CALLING_COMPLIANCE.md)
+for the caller, recipient, and call purpose. The examples are not legal advice or compliance
+certification; their defaults and passing tests do not authorize worldwide calling.
+
 ## Install
 
 ```sh
