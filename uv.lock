@@ -366,7 +366,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dialt-sdk", specifier = ">=0.39.0" },
+    { name = "dialt-sdk", specifier = ">=0.39.1" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -379,16 +379,16 @@ dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "dialt-sdk"
-version = "0.39.0"
+version = "0.39.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/bf/fea2d200182dd59b6cb7d55698a6810ecdac161a16bda89dc8379b4c47f2/dialt_sdk-0.39.0.tar.gz", hash = "sha256:7523396a4545897724a18bf1af86a055a05e536ad9592936dd8a406d1563bb76", size = 78492, upload-time = "2026-09-25T19:18:22.493Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/f1/6fc4853f4a95553fa6d6ebae04defe98661d83db7cdcddb8ee019c050412/dialt_sdk-0.39.1.tar.gz", hash = "sha256:84025c41ed2fc59cb039a2b839847d67afe559b30fb850e7971f2e6b1902ebc0", size = 79815, upload-time = "2026-09-26T19:05:32.261Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/72/a7/40094bc7775729e0a12695107e10fdb8f714ee3dff7bb816b839267cf5fa/dialt_sdk-0.39.0-py3-none-any.whl", hash = "sha256:bf2110760d9e02cb10940c72e4dde85716f20da085ab1139644c3f9d7ecedcb9", size = 56575, upload-time = "2026-09-25T19:18:21.369Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/24/952d826169e4aa097c43f59965da135097e0c095365a1aa29f832c5c2efb/dialt_sdk-0.39.1-py3-none-any.whl", hash = "sha256:6ca109fb998b848a30131a07898dbb80ed759e83c5ab51486247ba078a5405eb", size = 57310, upload-time = "2026-09-26T19:05:31.1Z" },
 ]
 
 [[package]]

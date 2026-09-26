@@ -29,7 +29,7 @@ uv sync --frozen
 cp .env.example .env
 ```
 
-Python recipes require `dialt-sdk>=0.39.0`; the browser example uses `@dialt/sdk@0.48.0`.
+Python recipes require `dialt-sdk>=0.39.1`; the browser example uses `@dialt/sdk@0.48.1`.
 These releases include breaking alpha cleanup; see the [migration guide](https://dialt.com/docs/api/migration/)
 when updating an existing integration. The lockfiles pin the versions tested here.
 They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
