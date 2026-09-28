@@ -5,6 +5,7 @@ import json
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from dialt_recipes import twilio as bridge
 from dialt_recipes.telephony_audio import (
@@ -60,6 +61,24 @@ def test_connect_stream_twiml_carries_prelude_and_stream_urls() -> None:
     assert 'url="wss://voice.example.com/media"' in twiml
     assert 'statusCallback="https://voice.example.com/stream-status"' in twiml
     assert twiml.endswith("</Connect><Hangup /></Response>")
+
+
+def test_connect_stream_twiml_uses_escaped_custom_parameters() -> None:
+    twiml = bridge.connect_stream_twiml(
+        SETTINGS,
+        stream_parameters={"attempt_id": "attempt-123", "opaque": 'a&b"c'},
+    )
+    assert '<Stream url="wss://voice.example.com/media"' in twiml
+    assert '<Parameter name="attempt_id" value="attempt-123" />' in twiml
+    assert '<Parameter name="opaque" value="a&amp;b&quot;c" />' in twiml
+    assert "</Stream></Connect>" in twiml
+
+
+def test_connect_stream_twiml_rejects_invalid_custom_parameters() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        bridge.connect_stream_twiml(SETTINGS, stream_parameters={"": "value"})
+    with pytest.raises(ValueError, match="under 500"):
+        bridge.connect_stream_twiml(SETTINGS, stream_parameters={"name": "x" * 496})
 
 
 def test_playback_ledger_tracks_unacknowledged_audio() -> None:

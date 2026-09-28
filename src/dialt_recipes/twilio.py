@@ -21,6 +21,7 @@ import html
 import json
 import logging
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -77,15 +78,43 @@ def twilio_signature_is_valid(
 
 
 def connect_stream_twiml(settings: TwilioBridgeSettings, *, prelude: str = "",
-                         media_path: str = "/media", status_path: str = "/stream-status") -> str:
+                         media_path: str = "/media", status_path: str = "/stream-status",
+                         stream_parameters: Mapping[str, str] | None = None) -> str:
     """TwiML that connects the call to the bridge's media websocket. `prelude` is raw TwiML
-    played before the stream connects (a ringback tone, a compliance notice)."""
+    played before the stream connects (a ringback tone, a compliance notice).
+
+    Twilio does not allow query parameters on a Stream URL. `stream_parameters` renders nested
+    ``<Parameter>`` elements instead; put only opaque correlation identifiers there, not caller
+    data. Twilio requires each combined parameter name and value to be under 500 characters.
+    """
     stream_url = html.escape(settings.websocket_url(media_path), quote=True)
     status_url = html.escape(settings.http_url(status_path), quote=True)
+    parameters = []
+    for name, value in (stream_parameters or {}).items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("Twilio Stream parameter names must be non-empty strings")
+        if not isinstance(value, str):
+            raise ValueError("Twilio Stream parameter values must be strings")
+        if len(name) + len(value) >= 500:
+            raise ValueError("Twilio Stream parameter name and value must total under 500 characters")
+        parameters.append(
+            f'<Parameter name="{html.escape(name, quote=True)}" '
+            f'value="{html.escape(value, quote=True)}" />'
+        )
+    parameter_xml = "".join(parameters)
+    if parameter_xml:
+        stream = (
+            f'<Stream url="{stream_url}" statusCallback="{status_url}" '
+            f'statusCallbackMethod="POST">{parameter_xml}</Stream>'
+        )
+    else:
+        stream = (
+            f'<Stream url="{stream_url}" statusCallback="{status_url}" '
+            'statusCallbackMethod="POST" />'
+        )
     return (
         f"<Response>{prelude}<Connect>"
-        f'<Stream url="{stream_url}" statusCallback="{status_url}" '
-        'statusCallbackMethod="POST" />'
+        f"{stream}"
         "</Connect><Hangup /></Response>"
     )
 

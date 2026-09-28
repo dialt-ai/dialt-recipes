@@ -1,0 +1,25 @@
+[project]
+name = "dialt-twilio-outbound-example"
+version = "0.1.0"
+description = "One-call Twilio outbound appointment-reminder recipe for Dialt."
+requires-python = ">=3.11"
+dependencies = [
+    "dialt-sdk>=0.28.0",
+    "dialt-recipes @ git+https://github.com/dialt-ai/dialt-recipes.git",
+    "fastapi>=0.115",
+    "numpy>=1.26",
+    "phonenumbers>=8.13",
+    "python-dotenv>=1.0",
+    "python-multipart>=0.0.18",
+    "soxr>=1.1",
+    "twilio>=9.4",
+    "uvicorn[standard]>=0.34",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28", "pytest>=8.3"]
+
+[tool.uv.sources]
+# Checkout-only override. A standalone copy must remove this section and regenerate uv.lock so
+# the declared Git dependency above is used; see README.md.
+dialt-recipes = { path = "../..", editable = true }
