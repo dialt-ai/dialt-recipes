@@ -126,9 +126,27 @@ def simulation_main() -> None:
     asyncio.run(_simulation(args))
 
 
+def _preflight(client: EvalsClient, case_ids: list[str], out, **options) -> dict:
+    """Check every case against every target before starting; list every problem at once."""
+    try:
+        plan = client.start_run(case_ids, dry_run=True, **options)
+    except EvalsError as exc:
+        details = exc.details if isinstance(exc.details, dict) else {}
+        problems = [problem.get("message", "") for problem in details.get("errors") or []]
+        raise ValueError("\n".join(problems) or details.get("reason") or str(exc)) from None
+    for warning in plan.get("warnings", []):
+        out(f"  ignored: {warning['message']}")
+    return plan
+
+
 def push(client: EvalsClient, paths: list[Path], *, modality: str, repetitions: int,
-         wait: bool, targets: list[str] | None = None, out=print) -> dict:
-    """Upsert every case, start one hosted run over them, print the dashboard link."""
+         wait: bool, targets: list[str] | None = None, dry_run: bool = False,
+         accept_charge: bool = False, out=print) -> dict:
+    """Upsert every case, check the run, start it, print the dashboard link.
+
+    An external target reserves credit per attempt: the plan quotes it and the run starts only
+    with accept_charge. dry_run stops after the plan.
+    """
     documents = []
     for path in paths:
         for document in load_cases(path):
@@ -139,15 +157,29 @@ def push(client: EvalsClient, paths: list[Path], *, modality: str, repetitions: 
     cases = client.upsert_cases(documents)
     out(f"{len(cases)} case{'s' if len(cases) != 1 else ''} pushed: "
         + ", ".join(case["name"] for case in cases))
-    run = client.start_run([case["id"] for case in cases], modality=modality,
-                           repetitions=repetitions, **({"targets": targets} if targets is not None else {}))
+    options = {"modality": modality, "repetitions": repetitions,
+               **({"targets": targets} if targets is not None else {})}
+    case_ids = [case["id"] for case in cases]
+    plan = _preflight(client, case_ids, out, **options)
+    charge = plan.get("max_external_charge_micros")
+    if charge:
+        out(f"external credit reserved: up to ${charge / 1_000_000:.2f} for {plan['attempts']} attempts"
+            + ("" if (plan.get("credit") or {}).get("sufficient", True) else " (insufficient credit)"))
+    if dry_run:
+        out(f"dry run: {plan['attempts']} attempts, nothing started")
+        return plan
+    if charge and not accept_charge:
+        raise ValueError("this run reserves external credit; rerun with --accept-charge to start it")
+    run = client.start_run(case_ids, **options, **({"max_external_charge_micros": charge} if charge else {}))
     out(f"run {run['id'][:8]} started ({modality}): {client.dashboard_url(run['id'])}")
     if not wait:
         return run
     run = client.wait(run["id"])
     for attempt in run.get("attempts", []):
-        out(f"  {attempt['status']:<9} {attempt['case_name']}"
-            + (f"  ({attempt['termination_reason']})" if attempt.get("termination_reason") else ""))
+        out(f"  {attempt['status']:<9} {attempt.get('target_id', 'dialt'):<12} {attempt['case_name']}"
+            + (f"  ({attempt['termination_reason']})" if attempt.get("termination_reason") else "")
+            + (f"  error={attempt['error']} id={attempt.get('correlation_id')}"
+               if attempt.get("error") else ""))
     out(f"run {run['id'][:8]} {run['status']}")
     return run
 
@@ -160,6 +192,10 @@ def evals_main() -> None:
     push_cmd.add_argument("--modality", choices=["text", "voice"], default="text")
     push_cmd.add_argument("--repetitions", type=int, default=1)
     push_cmd.add_argument("--targets", nargs="+", help="Target IDs, such as dialt dialt-smart")
+    push_cmd.add_argument("--dry-run", action="store_true",
+                          help="check every case against every target and start nothing")
+    push_cmd.add_argument("--accept-charge", action="store_true",
+                          help="accept the quoted external credit reservation")
     push_cmd.add_argument("--wait", action="store_true", help="poll until the run finishes")
     push_cmd.add_argument("--base-url")
     args = parser.parse_args()
@@ -168,7 +204,8 @@ def evals_main() -> None:
     client = EvalsClient(api_key, base_url=base_url)
     try:
         run = push(client, args.paths, modality=args.modality, repetitions=args.repetitions,
-                   wait=args.wait, targets=args.targets)
+                   wait=args.wait, targets=args.targets, dry_run=args.dry_run,
+                   accept_charge=args.accept_charge)
     except (EvalsError, ValueError, TimeoutError) as exc:
         raise SystemExit(str(exc)) from None
     if args.wait and run.get("status") != "passed":

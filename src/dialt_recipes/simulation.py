@@ -61,6 +61,8 @@ def assistant_turns(transcript: list[dict]) -> int:
 
 LEGACY_KEYS = ("target_instructions", "simulator_instructions", "target_tools", "expected")
 MAX_FIXTURE_FIELD_VALUE_CHARS = 20_000
+# The least time the final policy watermark gets after a call ends, as in hosted evals.
+POLICY_SETTLE_FLOOR_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -589,7 +591,8 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
         if policy_checks and report.termination_reason not in {"connection_error", "timeout", "observer_error"}:
             await asyncio.gather(*(relay.close() for relay in relays.values()))
             await asyncio.gather(*(relay.close() for relay in voice_relays.values()))
-            remaining = max(0.0, case.timeout_s - (time.monotonic() - attempt_started))
+            # A call that ended near timeout_s still gets a few seconds for its final watermark.
+            remaining = max(POLICY_SETTLE_FLOOR_S, case.timeout_s - (time.monotonic() - attempt_started))
             try:
                 async with asyncio.timeout(min(remaining, 55.0)):
                     while not policy_evidence.complete and not policy_evidence.failed:

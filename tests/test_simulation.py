@@ -375,8 +375,15 @@ def test_push_upserts_then_starts_one_run(tmp_path):
             self.calls.append(("upsert", [d["name"] for d in documents]))
             return [{"id": f"id-{d['name']}", "name": d["name"]} for d in documents]
 
-        def start_run(self, case_ids, *, modality, repetitions, targets=None):
+        def start_run(self, case_ids, *, modality, repetitions, targets=None, dry_run=False,
+                      max_external_charge_micros=None):
+            external = [t for t in targets or [] if t.endswith("-live")]
+            if dry_run:
+                return {"valid": True, "warnings": [], "attempts": len(case_ids) * repetitions,
+                        "max_external_charge_micros": 357_500 * len(external) * len(case_ids) or None,
+                        "credit": {"sufficient": True} if external else None}
             self.targets = targets
+            self.charge = max_external_charge_micros
             self.calls.append(("run", case_ids, modality, repetitions))
             return {"id": "run-1234abcd", "status": "queued"}
 
@@ -385,8 +392,9 @@ def test_push_upserts_then_starts_one_run(tmp_path):
 
         def wait(self, run_id):
             return {"id": run_id, "status": "passed", "attempts": [
-                {"status": "passed", "case_name": "a", "termination_reason": "completed"},
-                {"status": "passed", "case_name": "b", "termination_reason": "max_turns"},
+                {"status": "passed", "target_id": "dialt", "case_name": "a", "termination_reason": "completed"},
+                {"status": "error", "target_id": "dialt", "case_name": "b", "termination_reason": "stalled",
+                 "error": "stalled", "correlation_id": "eval-run-2"},
             ]}
 
     lines, client = [], FakeClient()
@@ -404,6 +412,35 @@ def test_push_upserts_then_starts_one_run(tmp_path):
     push(client, [tmp_path], modality="text", repetitions=1, wait=False,
          targets=["dialt", "dialt-smart"], out=lines.append)
     assert client.targets == ["dialt", "dialt-smart"]
+    with pytest.raises(ValueError, match="--accept-charge"):
+        push(client, [tmp_path], modality="voice", repetitions=1, wait=False,
+             targets=["dialt", "openai-live"], out=lines.append)
+    runs = len([c for c in client.calls if c[0] == "run"])
+    plan = push(client, [tmp_path], modality="voice", repetitions=1, wait=False,
+                targets=["dialt", "openai-live"], dry_run=True, out=lines.append)
+    assert plan["max_external_charge_micros"] == 715_000 and lines[-1] == "dry run: 2 attempts, nothing started"
+    assert len([c for c in client.calls if c[0] == "run"]) == runs    # a dry run starts nothing
+    push(client, [tmp_path], modality="voice", repetitions=1, wait=False,
+         targets=["dialt", "openai-live"], accept_charge=True, out=lines.append)
+    assert client.charge == 715_000
+
+
+def test_push_lists_every_preflight_problem(tmp_path):
+    from dialt.evals import EvalsError
+    (tmp_path / "a.json").write_text(json.dumps({"name": "a", "starter": "hi"}))
+
+    class FakeClient:
+        def upsert_cases(self, documents):
+            return [{"id": "id-a", "name": "a"}]
+
+        def start_run(self, case_ids, **options):
+            raise EvalsError(400, "Request validation failed.", code="validation_error", details={
+                "reason": "two problems", "errors": [{"message": "OpenAI Live: a: set limits.timeout_s"},
+                                                     {"message": "OpenAI Live: a: target.policy is not supported"}]})
+
+    with pytest.raises(ValueError, match="timeout_s\nOpenAI Live: a: target.policy"):
+        push(FakeClient(), [tmp_path], modality="voice", repetitions=1, wait=False,
+             targets=["openai-live"], out=lambda _line: None)
 
 
 def test_bridge_and_final_are_one_turn_and_starters_are_checked():
