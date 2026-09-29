@@ -29,7 +29,7 @@ uv sync --frozen
 cp .env.example .env
 ```
 
-Python recipes require `dialt-sdk>=0.39.1`; the browser example uses `@dialt/sdk@0.48.1`.
+Python recipes require `dialt-sdk>=0.40.0`; the browser example uses `@dialt/sdk@0.48.2`.
 These releases include breaking alpha cleanup; see the [migration guide](https://dialt.com/docs/api/migration/)
 when updating an existing integration. The lockfiles pin the versions tested here.
 They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
@@ -111,6 +111,14 @@ hosted case instead of duplicating it; the run appears on the
 uv run dialt-evals push examples/simulations/ --modality text --wait
 uv run dialt-evals push examples/simulations/ --modality text --targets dialt dialt-smart --wait
 ```
+
+`push` checks the run before starting it: every case against every target, with every problem
+listed at once, and settings a target ignores printed as warnings. `--dry-run` stops there. An
+external comparison (`--targets dialt openai-live`) reserves external credit per attempt; the
+check quotes it, and the run starts only with `--accept-charge`. External models accept a shorter
+`limits.timeout_s` than Dialt; `client.list_targets()` shows each target's `capabilities`, and the
+[evals guide](https://dialt.com/docs/api/evals/#preflight) explains them. With `--wait`, a failed
+attempt prints its failure code and `correlation_id`; quote that ID when reporting a problem.
 
 Local simulations explicitly default the assistant to Circuit and the simulated caller to Irish
 Male (`classic`), preserving case-specific voices. A `starter` is the caller's greeting in both
