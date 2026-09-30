@@ -388,7 +388,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dialt-sdk", specifier = ">=0.40.0" },
+    { name = "dialt-sdk", specifier = ">=0.41.0" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -401,16 +401,16 @@ dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "dialt-sdk"
-version = "0.40.0"
+version = "0.41.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/06/50b26cfc67f291b57e40ba1d23c7b7eab98141f616852d9dc7273d39fe0c/dialt_sdk-0.40.0.tar.gz", hash = "sha256:bfa017ac22b66c5413328694af30c9590bd33cd4b084d3df2caa612c803132ad", size = 80946, upload-time = "2026-09-29T11:28:50.569Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/4c/344dfaae780a6049644f8cd160625cb5b9790230ab10ae3c4b6659b5ff78/dialt_sdk-0.41.0.tar.gz", hash = "sha256:e73a043514e0c3ff51dd5e2e32afeadd1f80e90a07a898a932aafc5c6752dfe7", size = 83923, upload-time = "2026-09-30T11:36:38.425Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/65/46/610eeff814248caf8abeb9b23502d3ff73c580a5000ebc9511de630f2256/dialt_sdk-0.40.0-py3-none-any.whl", hash = "sha256:1254e2f562b2b1ec5c586aacb60b3286feb1623cfbfb52afc9dbc6ffa00c6604", size = 57968, upload-time = "2026-09-29T11:28:49.325Z" },
+    { url = "https://files.pythonhosted.org/packages/95/d8/3df2ed3acb2fe034532049dfbfebd68793ed29289545bcd2a2b42231222d/dialt_sdk-0.41.0-py3-none-any.whl", hash = "sha256:5b73d886de70f66ae92ca2146905662723a4dce6f385637615267b0892e4345a", size = 59136, upload-time = "2026-09-30T11:36:37.369Z" },
 ]
 
 [[package]]
@@ -438,7 +438,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dialt-recipes", editable = "../../../" },
-    { name = "dialt-sdk", specifier = ">=0.40.0" },
+    { name = "dialt-sdk", specifier = ">=0.41.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "python-multipart", specifier = ">=0.0.18" },

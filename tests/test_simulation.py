@@ -25,6 +25,12 @@ AGENT = "You answer the phone for a clinic's appointment line."
 CALLER = "You are a caller to a clinic's appointment line."
 
 
+def _minimal(case):
+    """A case with only the fields a test checks, plus the instructions every case must carry."""
+    return {**case, "target": {"instructions": AGENT, **case.get("target", {})},
+            "simulator": {"instructions": CALLER, **case.get("simulator", {})}}
+
+
 @pytest.mark.parametrize("side", ["target", "simulator"])
 def test_text_relay_withholds_a_tool_bridge_until_its_final_for_either_side(side):
     """A bridge is cover while a tool is unresolved, so it cannot prompt the other agent.
@@ -131,15 +137,15 @@ def test_case_uses_the_hosted_document_shape():
     with pytest.raises(ValueError, match="target.instructions"):
         SimulationCase.from_dict({"name": "old", "starter": "hi", "target_instructions": "x"})
     with pytest.raises(ValueError, match="unsupported check type"):
-        SimulationCase.from_dict({"name": "bad", "starter": "hi", "checks": [{"type": "vibes", "value": 1}]})
+        SimulationCase.from_dict(_minimal({"name": "bad", "starter": "hi", "checks": [{"type": "vibes", "value": 1}]}))
     with pytest.raises(ValueError, match="needs a value or criterion"):
-        SimulationCase.from_dict({"name": "bad", "starter": "hi", "checks": [{"type": "contains"}]})
+        SimulationCase.from_dict(_minimal({"name": "bad", "starter": "hi", "checks": [{"type": "contains"}]}))
     with pytest.raises(ValueError, match="starter must contain"):
-        SimulationCase.from_dict({"name": "no starter"})
+        SimulationCase.from_dict(_minimal({"name": "no starter"}))
     assert case.target["end_call"] is True
-    assert "end_call" not in SimulationCase.from_dict({"name": "n", "starter": "hi"}).target
+    assert "end_call" not in SimulationCase.from_dict(_minimal({"name": "n", "starter": "hi"})).target
     with pytest.raises(ValueError, match="target.end_call must be true, false"):
-        SimulationCase.from_dict({"name": "n", "starter": "hi", "target": {"end_call": "no"}})
+        SimulationCase.from_dict(_minimal({"name": "n", "starter": "hi", "target": {"end_call": "no"}}))
 
 
 class _FakeSession:
@@ -357,21 +363,21 @@ def test_fixtures_answer_like_hosted_runs():
 
 
 def test_collect_cases_reads_files_and_directories(tmp_path):
-    (tmp_path / "a.json").write_text(json.dumps({"name": "a", "starter": "hi"}))
-    (tmp_path / "b.json").write_text(json.dumps({"name": "b", "starter": "hi"}))
+    (tmp_path / "a.json").write_text(json.dumps(_minimal({"name": "a", "starter": "hi"})))
+    (tmp_path / "b.json").write_text(json.dumps(_minimal({"name": "b", "starter": "hi"})))
     assert [case.name for case in collect_cases([tmp_path, SAMPLE])] == [
         "a", "b", "physiotherapy appointment with constraints and permission"]
     (tmp_path / "c.json").write_text(json.dumps({"name": "c", "target_instructions": "old"}))
     with pytest.raises(SystemExit, match="target.instructions"):
         collect_cases([tmp_path])
-    (tmp_path / "c.json").write_text(json.dumps({"name": "c"}))
+    (tmp_path / "c.json").write_text(json.dumps(_minimal({"name": "c"})))
     with pytest.raises(SystemExit, match="starter must contain"):
         collect_cases([tmp_path])
 
 
 def test_push_upserts_then_starts_one_run(tmp_path):
-    (tmp_path / "a.json").write_text(json.dumps({"name": "a", "starter": "hi"}))
-    (tmp_path / "b.json").write_text(json.dumps({"name": "b", "starter": "hi"}))
+    (tmp_path / "a.json").write_text(json.dumps(_minimal({"name": "a", "starter": "hi"})))
+    (tmp_path / "b.json").write_text(json.dumps(_minimal({"name": "b", "starter": "hi"})))
 
     class FakeClient:
         def __init__(self):
@@ -404,7 +410,7 @@ def test_push_upserts_then_starts_one_run(tmp_path):
             ]}
 
     lines, client = [], FakeClient()
-    (tmp_path / "z.json").write_text(json.dumps({"name": "z", "starter": "hi", "checks": [{"type": "contains"}]}))
+    (tmp_path / "z.json").write_text(json.dumps(_minimal({"name": "z", "starter": "hi", "checks": [{"type": "contains"}]})))
     with pytest.raises(ValueError, match="z: each check needs"):
         push(client, [tmp_path], modality="text", repetitions=1, wait=False, out=lines.append)
     assert client.calls == []                                   # nothing upserted on a bad file
@@ -433,7 +439,7 @@ def test_push_upserts_then_starts_one_run(tmp_path):
 
 def test_push_lists_every_preflight_problem(tmp_path):
     from dialt.evals import EvalsError
-    (tmp_path / "a.json").write_text(json.dumps({"name": "a", "starter": "hi"}))
+    (tmp_path / "a.json").write_text(json.dumps(_minimal({"name": "a", "starter": "hi"})))
 
     class FakeClient:
         def upsert_cases(self, documents):
@@ -456,11 +462,11 @@ def test_bridge_and_final_are_one_turn_and_starters_are_checked():
                   {"role": "assistant", "text": "Else?", "turn": "turn2"},
                   {"role": "assistant", "text": "legacy entry"}]
     assert assistant_turns(transcript) == 3
-    case = SimulationCase.from_dict({"name": "n", "starter": "I need help."})
+    case = SimulationCase.from_dict(_minimal({"name": "n", "starter": "I need help."}))
     assert case.max_turns == 20
     for modality in (None, "text", "voice"):
         with pytest.raises(ValueError, match="300 characters"):
-            SimulationCase.from_dict({"name": "n", "starter": "I need help. " * 40}, modality=modality)
+            SimulationCase.from_dict(_minimal({"name": "n", "starter": "I need help. " * 40}), modality=modality)
 
 
 def test_dialt_sim_checks_starters_before_running(tmp_path):
@@ -476,23 +482,23 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
     from dialt.relay import SIMULATION_SILENCE_END_S, SIMULATION_SILENCE_NUDGE_S
     from dialt_recipes.simulation import session_mode
 
-    assert session_mode({}, "text").end_call is True
+    assert session_mode({"instructions": AGENT}, "text").end_call is True
     for modality in ("text", "voice"):
-        for config in ({}, {"voice": None}):
+        for config in ({"instructions": AGENT}, {"instructions": AGENT, "voice": None}):
             assert session_mode(config, modality).to_wire()["voice"] == "circuit"
             assert session_mode(config, modality, simulator=True).to_wire()["voice"] == "classic"
             assert session_mode(config, modality, simulator=True).brain == "smart"
         for voice in ("circuit", "classic", "chime"):
-            assert session_mode({"voice": voice}, modality).voice == voice
-            assert session_mode({"voice": voice}, modality, simulator=True).voice == voice
-    assert session_mode({"end_call": False}, "text").end_call is False
-    conditioned = session_mode({"end_call": {"when": "the caller says goodbye"}}, "text")
+            assert session_mode({"instructions": AGENT, "voice": voice}, modality).voice == voice
+            assert session_mode({"instructions": AGENT, "voice": voice}, modality, simulator=True).voice == voice
+    assert session_mode({"instructions": AGENT, "end_call": False}, "text").end_call is False
+    conditioned = session_mode({"instructions": AGENT, "end_call": {"when": "the caller says goodbye"}}, "text")
     assert conditioned.end_call is True and conditioned.end_call_when == "the caller says goodbye"
-    tuned = session_mode({"silence_nudge_s": 8, "silence_end_s": 20,
+    tuned = session_mode({"instructions": AGENT, "silence_nudge_s": 8, "silence_end_s": 20,
                           "tools": [{"name": "book"}], "tool_choice": {"tool": "book"}}, "voice")
     assert (tuned.silence_nudge_s, tuned.silence_end_s) == (8, 20)
     assert tuned.tool_choice == {"tool": "book"} and tuned.greeting is False
-    default = session_mode({}, "voice")
+    default = session_mode({"instructions": AGENT}, "voice")
     assert (default.silence_nudge_s, default.silence_end_s) == (
         SIMULATION_SILENCE_NUDGE_S, SIMULATION_SILENCE_END_S)
     caller = session_mode({"instructions": "Act like a caller", "voice": "ember"}, "voice",
@@ -505,7 +511,7 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
     with pytest.raises(ValueError, match="unexpected field: persona"):
         session_mode({"persona": "x"}, "text")
     with pytest.raises(ValueError, match="simulator.tools is set by the run"):
-        SimulationCase.from_dict({"name": "n", "starter": "hi", "simulator": {"tools": []}})
+        SimulationCase.from_dict(_minimal({"name": "n", "starter": "hi", "simulator": {"tools": []}}))
 
 
 def test_callable_fixture_rejection_is_a_failed_tool_result() -> None:
