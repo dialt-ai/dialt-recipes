@@ -88,8 +88,10 @@ call, and their fixed hand-off result ends the call at the hand-off.
 ## On a phone call
 
 Reuse `examples/integrations/twilio`. Build state per call and route `handoff_to_agent` to
-`HandoffState.handoff`. `BridgeHooks.on_tool_result` runs after the bridge has sent that result,
-in the tool task rather than its media/event loop:
+`HandoffState.handoff`. The bridge sends the model only a `ToolError`'s message, so re-raise its
+validation errors as `ToolError` (from `dialt_recipes.twilio`) to keep the read-back guidance.
+`BridgeHooks.on_tool_result` runs after the bridge has sent that result, in the tool task rather
+than its media/event loop:
 
 ```python
 def call_hooks():
@@ -98,7 +100,10 @@ def call_hooks():
 
     async def execute_tool(name, args):
         if name == "handoff_to_agent":
-            return state.handoff(args)
+            try:
+                return state.handoff(args)
+            except ValueError as exc:   # written for the model: "read them back", "missing: ..."
+                raise ToolError(str(exc)) from exc
         ...
 
     async def on_tool_result(name, args, result, outcome, verified, session):

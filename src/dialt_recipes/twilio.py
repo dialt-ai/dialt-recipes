@@ -146,12 +146,23 @@ class PlaybackLedger:
         return self.pending_ms(), 0
 
 
+class ToolError(Exception):
+    """Raise from `execute_tool` to tell the model why a tool failed.
+
+    Its message is sent to the model, so keep it short and safe to repeat to the caller, for
+    example "no appointment slots on that date". Any other exception is logged on the host and
+    reaches the model only as `{"error": "tool_failed"}`: exception text can carry hostnames,
+    URLs with credentials or stack details, and the model may repeat what it is given.
+    """
+
+
 @dataclass
 class BridgeHooks:
     """Where the host plugs in.
 
     execute_tool(name, args): run one application tool and return its result; raise to report
-        a failed tool. Undeclared tools never reach it.
+        a failed tool. Only a ToolError's message reaches the model. Undeclared tools never
+        reach it.
     on_event(event): every Dialt session event, before the bridge acts on it, for bookkeeping
         (transcripts, tool timing, permission outcomes). Must not block for long.
     on_connected(session): once the Dialt session is open, before audio flows (start a
@@ -212,12 +223,17 @@ async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
                 try:
                     result = await hooks.execute_tool(name, args)
                     outcome, verified = "succeeded", True
-                except Exception as exc:  # noqa: BLE001 - a failed tool is a result, not a crash
-                    logger.exception("Dialt tool %s failed call_sid=%s", name, call_sid)
-                    # The model gets the failure as stated by the host, so it can decide what
-                    # to say; a bare "tool_failed" told it nothing.
-                    result = {"error": "tool_failed", "detail": str(exc) or type(exc).__name__}
+                except ToolError as exc:
+                    # The host chose this message for the model, so it can decide what to say.
+                    logger.warning("Dialt tool %s failed call_sid=%s: %s", name, call_sid, exc)
+                    result = {"error": "tool_failed"}
+                    if str(exc):
+                        result["detail"] = str(exc)
                     outcome, verified = "failed", False
+                except Exception:  # noqa: BLE001 - a failed tool is a result, not a crash
+                    # Exception text stays in the host's log: it can hold internal details.
+                    logger.exception("Dialt tool %s failed call_sid=%s", name, call_sid)
+                    result, outcome, verified = {"error": "tool_failed"}, "failed", False
                 await session.send_tool_result(tool_id, result, outcome=outcome, verified=verified)
                 if hooks.on_tool_result is not None:
                     try:

@@ -199,6 +199,53 @@ def test_host_end_call_closes_the_session_and_tool_failures_are_results(monkeypa
     assert holder["connection"].session.closed is True
 
 
+def test_only_a_tool_error_message_reaches_the_model(monkeypatch, caplog) -> None:
+    """Exception text can hold internal details; the model gets it only from a ToolError."""
+    websocket, _released = _fake_socket(release_after_media=10**6)
+    end_call = asyncio.Event()
+    sent: dict[str, tuple] = {}
+
+    async def events(session):
+        async def send_tool_result(tool_id, result, **kwargs):
+            sent[tool_id] = (result, kwargs)
+
+        session.send_tool_result = send_tool_result
+        for tool_id, name in (("t1", "leaky"), ("t2", "explained"), ("t3", "bare")):
+            yield SimpleNamespace(type="tool_call", t_ms=10,
+                                  data={"id": tool_id, "name": name, "args": {}}, audio=None)
+        while not session.closed:
+            await asyncio.sleep(0.01)
+
+    connect, _holder = _fake_connect(events)
+    monkeypatch.setattr(bridge.DialtSession, "connect", connect)
+
+    async def execute_tool(name, args):
+        if name == "leaky":
+            raise RuntimeError("GET https://admin:s3cret@db.internal:5432/slots failed")
+        if name == "explained":
+            raise bridge.ToolError("no appointment slots on that date")
+        raise bridge.ToolError()
+
+    async def on_tool_result(*args):
+        if len(sent) == 3:
+            end_call.set()
+
+    async def run():
+        await asyncio.wait_for(bridge.run_call_bridge(
+            websocket, "MZ", "CA-tools", settings=SETTINGS, mode=MODE,
+            hooks=bridge.BridgeHooks(execute_tool=execute_tool, end_call=end_call,
+                                     on_tool_result=on_tool_result)), timeout=5)
+
+    with caplog.at_level("WARNING", logger="dialt_recipes.twilio"):
+        asyncio.run(run())
+    failed = {"outcome": "failed", "verified": False}
+    assert sent["t1"] == ({"error": "tool_failed"}, failed)
+    assert sent["t2"] == ({"error": "tool_failed", "detail": "no appointment slots on that date"},
+                          failed)
+    assert sent["t3"] == ({"error": "tool_failed"}, failed)
+    assert "db.internal" in caplog.text   # the host's own log keeps the full failure
+
+
 def test_receive_stream_start_rejects_bad_and_stopped_streams() -> None:
     class Socket:
         def __init__(self, messages):

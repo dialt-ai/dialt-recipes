@@ -38,7 +38,8 @@ selected mode.
 
 For phone calls, reuse `examples/integrations/twilio`. Your application owns dialing, routing,
 availability, transfer destinations, and one qualification state per call. Route the handoff
-tool to that state and your transfer integration.
+tool to that state and your transfer integration. The bridge sends the model only a
+`ToolError`'s message, so re-raise the state's `ValueError` validation messages as `ToolError`.
 
 ## Validation limit
 
