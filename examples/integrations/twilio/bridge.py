@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 from dialt import DEFAULT_REALTIME_URL, DialtMode
 from dialt_recipes.twilio import (
     BridgeHooks,
+    ToolError,
     TwilioBridgeSettings,
     connect_stream_twiml,
     receive_stream_start,
@@ -67,6 +68,14 @@ class Settings(TwilioBridgeSettings):
         if missing:
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
+        # Twilio signs the exact external URL and only streams to wss://, so the origin is https.
+        public_base_url = os.environ["PUBLIC_BASE_URL"].strip().rstrip("/")
+        parsed_base = urlsplit(public_base_url)
+        if (parsed_base.scheme != "https" or not parsed_base.hostname or "@" in parsed_base.netloc
+                or parsed_base.query or parsed_base.fragment):
+            raise RuntimeError("PUBLIC_BASE_URL must be the absolute https URL Twilio calls, "
+                               "for example https://voice.example.com")
+
         human_handoff_url = os.environ.get("TWILIO_HUMAN_HANDOFF_URL", "").strip() or None
         twilio_account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip() or None
         if human_handoff_url:
@@ -78,17 +87,17 @@ class Settings(TwilioBridgeSettings):
 
         raw_greeting = os.environ.get("DIALT_GREETING")
         greeting: str | bool | None
-        if raw_greeting is None:
-            greeting = None
+        if raw_greeting is None or not raw_greeting.strip():
+            greeting = None   # unset or blank: the server default
         elif raw_greeting.strip().lower() in {"false", "off", "none"}:
             greeting = False
         else:
-            greeting = raw_greeting
+            greeting = raw_greeting.strip()
 
         return cls(
-            dialt_api_key=os.environ["DIALT_API_KEY"],
-            twilio_auth_token=os.environ["TWILIO_AUTH_TOKEN"],
-            public_base_url=os.environ["PUBLIC_BASE_URL"].rstrip("/"),
+            dialt_api_key=os.environ["DIALT_API_KEY"].strip(),
+            twilio_auth_token=os.environ["TWILIO_AUTH_TOKEN"].strip(),
+            public_base_url=public_base_url,
             dialt_url=os.environ.get("DIALT_URL") or DEFAULT_REALTIME_URL,
             twilio_account_sid=twilio_account_sid,
             human_handoff_url=human_handoff_url,
@@ -134,11 +143,11 @@ async def execute_tool(call_sid: str, name: str, args: dict[str, Any]) -> Any:
     if name == "request_human_handoff":
         settings = get_settings()
         if not settings.human_handoff_url or not settings.twilio_account_sid:
-            raise RuntimeError("Human handoff is not configured")
+            raise ToolError("Human handoff is not configured")
         for field in ("reason", "summary"):
             value = args.get(field)
             if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"request_human_handoff requires a non-empty {field}")
+                raise ToolError(f"request_human_handoff requires a non-empty {field}")
 
         def redirect_call() -> None:
             client = Client(settings.twilio_account_sid, settings.twilio_auth_token)

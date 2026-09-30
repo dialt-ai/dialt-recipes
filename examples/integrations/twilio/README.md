@@ -19,6 +19,9 @@ uv sync --frozen
 uv run uvicorn bridge:app --env-file .env --host 0.0.0.0 --port 8000
 ```
 
+`DIALT_API_KEY` is a persistent Dialt account key from API & Billing: new keys begin with `dk_`
+and existing `ck_` keys remain valid. It stays on this server.
+
 The environment holds only secrets and deployment endpoints. The agent's role is application
 logic, so it lives in the versioned `instructions.md` next to `bridge.py`: who the agent answers
 for, what it does and how it handles unclear requests. Edit it for your application, or set
@@ -27,7 +30,8 @@ directory. Dialt requires instructions on every session and states no role of it
 bridge refuses to start if the file is missing or empty.
 
 Put the app behind public HTTPS and set `PUBLIC_BASE_URL` to that exact external origin, for
-example `https://voice.example.com`. Configure the Twilio phone number's incoming Voice webhook
+example `https://voice.example.com`. The bridge refuses to start on any other scheme, because
+Twilio signs the exact URL it calls and streams only to `wss://`. Configure the Twilio phone number's incoming Voice webhook
 as `POST https://voice.example.com/voice`.
 
 The webhook returns `<Connect><Stream>`. The bridge:
@@ -42,6 +46,12 @@ The webhook returns `<Connect><Stream>`. The bridge:
 Edit `tool_manifest()` and `execute_tool()` in `bridge.py`. Keep service credentials and effects
 inside the bridge. Only tool schemas, bounded arguments and bounded results should cross the
 Dialt session.
+
+A tool that raises sends the model a failed result. Raise `ToolError("short message")` when the
+model should know why, for example `ToolError("no appointment slots on that date")`; the model
+may repeat that message to the caller. Any other exception is logged on the bridge and reaches
+the model only as `{"error": "tool_failed"}`, because exception text can carry hostnames, URLs
+with credentials or stack details.
 
 ## Optional human handoff
 

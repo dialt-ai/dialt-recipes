@@ -267,6 +267,40 @@ def test_handoff_redirects_to_customer_configuration_not_model_arguments(monkeyp
     assert updates == [{"url": "https://customer.example/handoff", "method": "POST"}]
 
 
+def test_handoff_argument_errors_are_model_safe_tool_errors(monkeypatch) -> None:
+    _configure_handoff(monkeypatch)
+    with pytest.raises(core.ToolError, match="non-empty summary"):
+        asyncio.run(execute_tool("CA123", "request_human_handoff", {"reason": "Wants a person."}))
+
+
+def test_public_base_url_must_be_an_https_origin(monkeypatch) -> None:
+    _configure_required(monkeypatch)
+    for value in ("http://voice.example.com", "voice.example.com", "https://voice.example.com/?a=1",
+                  "https://user:pass@voice.example.com"):
+        monkeypatch.setenv("PUBLIC_BASE_URL", value)
+        with pytest.raises(RuntimeError, match="PUBLIC_BASE_URL must be"):
+            bridge.Settings.from_env()
+    monkeypatch.setenv("PUBLIC_BASE_URL", " https://voice.example.com/ ")
+    assert bridge.Settings.from_env().websocket_url("/media") == "wss://voice.example.com/media"
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com/twilio")  # a proxy prefix
+    assert bridge.Settings.from_env().http_url("/voice") == "https://voice.example.com/twilio/voice"
+
+
+def test_blank_greeting_means_the_server_default(monkeypatch) -> None:
+    _configure_required(monkeypatch)
+    monkeypatch.setenv("DIALT_GREETING", "  ")
+    assert bridge.Settings.from_env().greeting is None
+    monkeypatch.setenv("DIALT_GREETING", "off")
+    assert bridge.Settings.from_env().greeting is False
+    monkeypatch.setenv("DIALT_GREETING", " Hello, how can I help? ")
+    assert bridge.Settings.from_env().greeting == "Hello, how can I help?"
+
+
+def test_env_template_uses_a_current_account_key_prefix() -> None:
+    env_template = Path(__file__).with_name("env.example").read_text()
+    assert re.search(r"^DIALT_API_KEY=dk_", env_template, flags=re.MULTILINE)
+
+
 def test_unknown_tool_still_fails_closed(monkeypatch) -> None:
     _configure_handoff(monkeypatch)
     with pytest.raises(RuntimeError, match="No handler configured"):
