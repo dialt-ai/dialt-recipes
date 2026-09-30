@@ -105,7 +105,6 @@ def test_interruption_preserves_graceful_drain_and_hard_clear() -> None:
 
 def test_twilio_signatures_use_exact_http_and_websocket_urls(monkeypatch) -> None:
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
-    monkeypatch.setenv("DIALT_INSTRUCTIONS", "You answer the phone for an online store.")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
     get_settings.cache_clear()
@@ -127,21 +126,64 @@ def test_twilio_signatures_use_exact_http_and_websocket_urls(monkeypatch) -> Non
     get_settings.cache_clear()
 
 
-def test_instructions_are_required(monkeypatch) -> None:
-    """Dialt rejects a session without instructions: they carry the agent's role."""
+def _configure_required(monkeypatch) -> None:
+    for name in ("DIALT_URL", "DIALT_VOICE", "DIALT_GREETING", "DIALT_INSTRUCTIONS_FILE"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
-    monkeypatch.setenv("DIALT_INSTRUCTIONS", "  ")
+
+
+def test_instructions_come_from_the_versioned_file_next_to_the_bridge(monkeypatch) -> None:
+    _configure_required(monkeypatch)
+    expected = bridge.INSTRUCTIONS_FILE.read_text(encoding="utf-8").strip()
+    assert expected
+    assert bridge.Settings.from_env().instructions == expected
+    assert "clarifying question" in expected
+
+
+def test_retired_instructions_env_var_is_ignored_with_a_warning(monkeypatch, caplog) -> None:
+    _configure_required(monkeypatch)
+    monkeypatch.setenv("DIALT_INSTRUCTIONS", "An env var role")
+    with caplog.at_level("WARNING", logger="dialt_twilio"):
+        assert bridge.Settings.from_env().instructions != "An env var role"
+    assert "DIALT_INSTRUCTIONS is ignored" in caplog.text
+
+
+def test_instructions_file_can_be_overridden(monkeypatch, tmp_path) -> None:
+    _configure_required(monkeypatch)
+    role = tmp_path / "role.md"
+    role.write_text("You answer the phone for an online store.\n", encoding="utf-8")
+    monkeypatch.setenv("DIALT_INSTRUCTIONS_FILE", str(role))
+    assert bridge.Settings.from_env().instructions == "You answer the phone for an online store."
+
+
+@pytest.mark.parametrize("content", [None, "  \n"])
+def test_missing_or_empty_instructions_file_fails_clearly(monkeypatch, tmp_path, content) -> None:
+    """Dialt rejects a session without instructions: they carry the agent's role."""
+    _configure_required(monkeypatch)
+    role = tmp_path / "role.md"
+    if content is not None:
+        role.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("DIALT_INSTRUCTIONS_FILE", str(role))
+    with pytest.raises(RuntimeError, match="agent instructions file"):
+        bridge.Settings.from_env()
+
+
+def test_startup_fails_without_instructions(monkeypatch, tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    _configure_required(monkeypatch)
+    monkeypatch.setenv("DIALT_INSTRUCTIONS_FILE", str(tmp_path / "missing.md"))
     get_settings.cache_clear()
-    with pytest.raises(RuntimeError, match="DIALT_INSTRUCTIONS"):
-        get_settings()
+    with pytest.raises(RuntimeError, match="agent instructions file"):
+        with TestClient(bridge.app):
+            pass
     get_settings.cache_clear()
 
 
 def _configure_handoff(monkeypatch) -> None:
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
-    monkeypatch.setenv("DIALT_INSTRUCTIONS", "You answer the phone for an online store.")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC" + "1" * 32)
     monkeypatch.setenv("TWILIO_HUMAN_HANDOFF_URL", "https://customer.example/handoff")
@@ -268,7 +310,6 @@ def test_bridge_paces_outbound_audio_and_drains_before_closing(monkeypatch) -> N
                 await asyncio.sleep(0)
 
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
-    monkeypatch.setenv("DIALT_INSTRUCTIONS", "You answer the phone for an online store.")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "t")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
     bridge.get_settings.cache_clear() if hasattr(bridge.get_settings, "cache_clear") else None
