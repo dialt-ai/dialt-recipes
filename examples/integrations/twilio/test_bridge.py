@@ -182,6 +182,19 @@ def test_startup_fails_without_instructions(monkeypatch, tmp_path) -> None:
     get_settings.cache_clear()
 
 
+def test_only_dialt_environment_names_are_read(monkeypatch) -> None:
+    from dialt import DEFAULT_REALTIME_URL
+
+    _configure_required(monkeypatch)
+    monkeypatch.delenv("DIALT_API_KEY")
+    monkeypatch.setenv("CONVERSE_API_KEY", "ck_legacy")
+    monkeypatch.setenv("CONVERSE_URL", "wss://legacy.example/ws")
+    with pytest.raises(RuntimeError, match="DIALT_API_KEY"):
+        bridge.Settings.from_env()
+    monkeypatch.setenv("DIALT_API_KEY", "dk_test")
+    assert bridge.Settings.from_env().dialt_url == DEFAULT_REALTIME_URL
+
+
 def _configure_handoff(monkeypatch) -> None:
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
