@@ -4,6 +4,9 @@ This runnable integration connects an inbound Twilio phone call to one Dialt ses
 owns the phone number and call; this bridge owns deployment, audio transport and application
 tools; Dialt owns the realtime voice conversation.
 
+This is the maintained Twilio reference for Dialt. The Dialt repository and dialt.com docs point
+here and keep no copy of their own.
+
 It uses Twilio bidirectional Media Streams. It does not require Twilio ConversationRelay.
 
 ## Run it
@@ -54,10 +57,10 @@ HTTPS URL. That customer-owned endpoint returns the TwiML for the real destinati
 `<Dial>`, queue, conference, Flex flow or TaskRouter workflow. The destination is configuration
 and is never supplied by the model.
 
-This is a cold-transfer reference, not a generic contact-center implementation. The tool provides
-a reason and concise summary to `execute_tool()`. Persist them by `CallSid` before redirecting if
-the receiving agent needs context. Keep the handoff endpoint authenticated according to Twilio's
-webhook-security guidance.
+This is a cold-transfer reference, not a generic contact-center implementation. The tool provides a
+reason and concise summary to `execute_tool()`, which never puts either in a URL. Persist them by
+`CallSid` before redirecting if the receiving agent needs context. Keep the handoff endpoint
+authenticated according to Twilio's webhook-security guidance.
 
 ## Test it
 
