@@ -35,13 +35,13 @@ class Settings(TwilioBridgeSettings):
     twilio_account_sid: str | None = None
     human_handoff_url: str | None = None
     voice: str | None = None
-    instructions: str | None = None
+    instructions: str = ""   # the agent's role and application rules; Dialt requires them
     greeting: str | bool | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
-        missing = [name for name in ("DIALT_API_KEY", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL")
-                   if not os.environ.get(name)]
+        required = ("DIALT_API_KEY", "DIALT_INSTRUCTIONS", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL")
+        missing = [name for name in required if not os.environ.get(name, "").strip()]
         if missing:
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
@@ -71,7 +71,7 @@ class Settings(TwilioBridgeSettings):
             twilio_account_sid=twilio_account_sid,
             human_handoff_url=human_handoff_url,
             voice=os.environ.get("DIALT_VOICE") or None,
-            instructions=os.environ.get("DIALT_INSTRUCTIONS") or None,
+            instructions=os.environ["DIALT_INSTRUCTIONS"].strip(),
             greeting=greeting,
         )
 

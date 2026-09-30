@@ -5,7 +5,7 @@
 Three sets. `evals/intake/` declares only the hand-off tool, exactly as a real host starts the
 call; the fixed hand-off result tells the assistant to confirm the hand-off and end the call,
 and the caller says goodbye, so the judge sees a complete intake and nothing else. These are
-honest hosted and CLI runs of the intake persona. `evals/full_call/` declares every tool and
+honest hosted and CLI runs of the intake agent. `evals/full_call/` declares every tool and
 runs the whole call; they are for host.py, which starts with the intake manifest and swaps in
 the specialist's tools when the hand-off lands. They are host.py-only by construction: run
 through dialt-sim or hosted, the same fixed result ends the call at the hand-off. Both sets start

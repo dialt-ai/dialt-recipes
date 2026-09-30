@@ -67,8 +67,14 @@ def test_caller_owns_starter_in_both_modalities(monkeypatch, modality):
 
     monkeypatch.setattr("dialt_recipes.simulation.DialtSession.connect", connect)
     monkeypatch.setattr("dialt_recipes.simulation.VoiceTurnRelay", Relay)
-    case = SimulationCase.from_dict({"name": "caller opening", "starter": "Hello there."})
+    agent = "You answer the phone for a clinic's appointment line."
+    caller = "You are a caller to a clinic's appointment line."
+    case = SimulationCase.from_dict({
+        "name": "caller opening", "starter": "Hello there.",
+        "target": {"instructions": agent}, "simulator": {"instructions": caller}})
     asyncio.run(run_simulation("ws://example.test", "fake-key", case, modality=modality))
     assert modes[0].greeting is False
     assert modes[1].greeting == "Hello there."
+    # Dialt requires instructions on every session; each side's role comes only from its own.
+    assert (modes[0].instructions, modes[1].instructions) == (agent, caller)
     assert (modes[0].voice, modes[1].voice, modes[1].brain) == ("circuit", "classic", "smart")
