@@ -16,9 +16,12 @@ uv sync --frozen
 uv run uvicorn bridge:app --env-file .env --host 0.0.0.0 --port 8000
 ```
 
-Set `DIALT_INSTRUCTIONS` to the agent's role and application rules: who it answers for, what it
-does and how it handles unclear requests. Dialt requires instructions on every session and states
-no role of its own, so the bridge refuses to start without them.
+The environment holds only secrets and deployment endpoints. The agent's role is application
+logic, so it lives in the versioned `instructions.md` next to `bridge.py`: who the agent answers
+for, what it does and how it handles unclear requests. Edit it for your application, or set
+`DIALT_INSTRUCTIONS_FILE` to use a different file; a relative path resolves against the bridge's
+directory. Dialt requires instructions on every session and states no role of its own, so the
+bridge refuses to start if the file is missing or empty.
 
 Put the app behind public HTTPS and set `PUBLIC_BASE_URL` to that exact external origin, for
 example `https://voice.example.com`. Configure the Twilio phone number's incoming Voice webhook

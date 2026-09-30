@@ -10,8 +10,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -28,6 +31,25 @@ from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSoc
 from twilio.rest import Client
 
 logger = logging.getLogger("dialt_twilio")
+# The agent's role is application logic, versioned with this code. Edit instructions.md, or
+# point DIALT_INSTRUCTIONS_FILE at another file (relative paths resolve against this directory).
+INSTRUCTIONS_FILE = Path(__file__).with_name("instructions.md")
+
+
+def load_instructions() -> str:
+    """Read the agent's role from its file, failing clearly when it is missing or empty."""
+    if os.environ.get("DIALT_INSTRUCTIONS", "").strip():
+        logger.warning("DIALT_INSTRUCTIONS is ignored; the agent's role comes from %s",
+                       os.environ.get("DIALT_INSTRUCTIONS_FILE") or INSTRUCTIONS_FILE.name)
+    configured = os.environ.get("DIALT_INSTRUCTIONS_FILE", "").strip()
+    path = Path(__file__).parent / configured if configured else INSTRUCTIONS_FILE
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError(f"Cannot read the agent instructions file {path}: {exc}") from exc
+    if not text:
+        raise RuntimeError(f"The agent instructions file {path} is empty")
+    return text
 
 
 @dataclass(frozen=True)
@@ -40,7 +62,7 @@ class Settings(TwilioBridgeSettings):
 
     @classmethod
     def from_env(cls) -> Settings:
-        required = ("DIALT_API_KEY", "DIALT_INSTRUCTIONS", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL")
+        required = ("DIALT_API_KEY", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL")
         missing = [name for name in required if not os.environ.get(name, "").strip()]
         if missing:
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
@@ -71,7 +93,7 @@ class Settings(TwilioBridgeSettings):
             twilio_account_sid=twilio_account_sid,
             human_handoff_url=human_handoff_url,
             voice=os.environ.get("DIALT_VOICE") or None,
-            instructions=os.environ["DIALT_INSTRUCTIONS"].strip(),
+            instructions=load_instructions(),
             greeting=greeting,
         )
 
@@ -131,7 +153,13 @@ def _signature_is_valid(url: str, params: dict[str, Any], signature: str | None)
     return twilio_signature_is_valid(get_settings().twilio_auth_token, url, params, signature)
 
 
-app = FastAPI(title="Dialt Twilio bridge")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    get_settings()  # Fail at startup on missing configuration or instructions.
+    yield
+
+
+app = FastAPI(title="Dialt Twilio bridge", lifespan=_lifespan)
 
 
 @app.post("/voice")
