@@ -19,6 +19,10 @@ from dialt_recipes.simulation import (
 )
 
 SAMPLE = Path(__file__).resolve().parents[1] / "examples/simulations/appointment_booking.json"
+# Dialt requires instructions on every session: they carry the role, which the platform
+# prompt does not state. Cases that start sessions give each side one.
+AGENT = "You answer the phone for a clinic's appointment line."
+CALLER = "You are a caller to a clinic's appointment line."
 
 
 @pytest.mark.parametrize("side", ["target", "simulator"])
@@ -223,7 +227,8 @@ def test_voice_mics_run_for_the_whole_call_and_answer_a_barge_like_a_client(monk
     monkeypatch.setattr("dialt_recipes.simulation.DialtSession.connect", connect)
     monkeypatch.setattr("dialt_recipes.simulation.VoiceTurnRelay", RelaySpy)
     case = SimulationCase.from_dict({
-        "name": "n", "starter": "Hello", "limits": {"timeout_s": 10, "max_turns": 2}})
+        "name": "n", "starter": "Hello", "target": {"instructions": AGENT},
+        "simulator": {"instructions": CALLER}, "limits": {"timeout_s": 10, "max_turns": 2}})
     report = asyncio.run(run_simulation("ws://test", "key", case, modality="voice"))
 
     assert report.termination_reason == "completed"
@@ -258,7 +263,8 @@ def test_end_call_is_a_recorded_tool_call_and_the_simulator_always_has_it(monkey
 
     monkeypatch.setattr("dialt_recipes.simulation.DialtSession.connect", connect)
     case = SimulationCase.from_dict({
-        "name": "n", "starter": "Hello", "target": {"end_call": False},
+        "name": "n", "starter": "Hello", "target": {"instructions": AGENT, "end_call": False},
+        "simulator": {"instructions": CALLER},
         "checks": [{"type": "tool_called", "value": "end_call"}], "limits": {"timeout_s": 10},
     })
     report = asyncio.run(run_simulation("ws://test", "key", case))
@@ -495,6 +501,7 @@ def test_session_mode_passes_options_through_and_keeps_the_run_owned_ones() -> N
     assert caller.greeting == "Hello?"
     with pytest.raises(ValueError, match="unexpected field: turn_end_threshold"):
         session_mode({"turn_end_threshold": 0.2}, "voice")
+    # There is no "persona" option: `voice` selects the voice and `instructions` carry the role.
     with pytest.raises(ValueError, match="unexpected field: persona"):
         session_mode({"persona": "x"}, "text")
     with pytest.raises(ValueError, match="simulator.tools is set by the run"):
@@ -541,7 +548,8 @@ def test_target_greeting_opens_the_conversation_and_nothing_is_sent_first(monkey
     monkeypatch.setattr("dialt_recipes.simulation.DialtSession.connect", connect)
     monkeypatch.setattr("dialt_recipes.simulation.VoiceTurnRelay", RelayStub)
     case = SimulationCase.from_dict({
-        "name": "n", "target": {"greeting": "Hi, how old are you?"}, "limits": {"timeout_s": 10}})
+        "name": "n", "target": {"instructions": AGENT, "greeting": "Hi, how old are you?"},
+        "simulator": {"instructions": CALLER}, "limits": {"timeout_s": 10}})
     assert case.starter == "" and case.target["greeting"] == "Hi, how old are you?"
     report = asyncio.run(run_simulation("ws://test", "key", case, modality=modality))
 
@@ -594,8 +602,9 @@ def test_policy_drain_keeps_observers_and_replaces_corrected_speech(monkeypatch,
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
     case = SimulationCase.from_dict({
         'name': 'drain', 'starter': 'Hello',
-        'target': {'policy': {'rules': [
+        'target': {'instructions': AGENT, 'policy': {'rules': [
             {'id': 'r', 'when': 'A complaint', 'do': 'Escalate'}]}},
+        'simulator': {'instructions': CALLER},
         'limits': {'timeout_s': 10},
         'checks': [{'type': 'policy_flag', 'value': 'r', 'delivered': True}],
     })
@@ -635,8 +644,9 @@ def test_policy_asr_revision_updates_its_source_not_the_latest_user(monkeypatch,
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
     case = SimulationCase.from_dict({
         'name': 'revision', 'starter': 'Hello',
-        'target': {'policy': {'rules': [
+        'target': {'instructions': AGENT, 'policy': {'rules': [
             {'id': 'r', 'when': 'A complaint', 'do': 'Escalate'}]}},
+        'simulator': {'instructions': CALLER},
         'limits': {'timeout_s': 10},
         'checks': [{'type': 'policy_flag', 'value': 'r', 'min_count': 0, 'max_count': 0}],
     })
@@ -679,7 +689,8 @@ def test_monitor_drain_answers_agent_tools_without_restarting_relays(monkeypatch
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
     case = SimulationCase.from_dict({
         'name': 'agent tool during monitor drain', 'starter': '',
-        'target': {'greeting': 'Hello', 'tools': [{'name': 'request_manager', 'description': 'Prepare a transfer.',
+        'simulator': {'instructions': CALLER},
+        'target': {'instructions': AGENT, 'greeting': 'Hello', 'tools': [{'name': 'request_manager', 'description': 'Prepare a transfer.',
                              'parameters': {'type': 'object', 'properties': {}}}],
                    'policy': {'rules': [
                        {'id': 'r', 'when': 'A manager is requested', 'do': 'Call request_manager if needed.'}]}},

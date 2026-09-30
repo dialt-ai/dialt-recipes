@@ -105,6 +105,7 @@ def test_interruption_preserves_graceful_drain_and_hard_clear() -> None:
 
 def test_twilio_signatures_use_exact_http_and_websocket_urls(monkeypatch) -> None:
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
+    monkeypatch.setenv("DIALT_INSTRUCTIONS", "You answer the phone for an online store.")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
     get_settings.cache_clear()
@@ -126,8 +127,21 @@ def test_twilio_signatures_use_exact_http_and_websocket_urls(monkeypatch) -> Non
     get_settings.cache_clear()
 
 
+def test_instructions_are_required(monkeypatch) -> None:
+    """Dialt rejects a session without instructions: they carry the agent's role."""
+    monkeypatch.setenv("DIALT_API_KEY", "dk_test")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
+    monkeypatch.setenv("DIALT_INSTRUCTIONS", "  ")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="DIALT_INSTRUCTIONS"):
+        get_settings()
+    get_settings.cache_clear()
+
+
 def _configure_handoff(monkeypatch) -> None:
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
+    monkeypatch.setenv("DIALT_INSTRUCTIONS", "You answer the phone for an online store.")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "twilio-test-token")
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC" + "1" * 32)
     monkeypatch.setenv("TWILIO_HUMAN_HANDOFF_URL", "https://customer.example/handoff")
@@ -254,12 +268,14 @@ def test_bridge_paces_outbound_audio_and_drains_before_closing(monkeypatch) -> N
                 await asyncio.sleep(0)
 
     monkeypatch.setenv("DIALT_API_KEY", "dk_test")
+    monkeypatch.setenv("DIALT_INSTRUCTIONS", "You answer the phone for an online store.")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "t")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
     bridge.get_settings.cache_clear() if hasattr(bridge.get_settings, "cache_clear") else None
     monkeypatch.setattr(core.DialtSession, "connect", fake_connect)
     websocket = FakeWebSocket()
-    settings = bridge.Settings(dialt_api_key="dk_test", twilio_auth_token="t", public_base_url="https://voice.example.com")
+    settings = bridge.Settings(dialt_api_key="dk_test", twilio_auth_token="t", public_base_url="https://voice.example.com",
+                               instructions="You answer the phone for an online store.")
 
     async def run() -> None:
         await asyncio.wait_for(bridge._run_bridge(websocket, "MZ-test", "CA-paced", settings), timeout=5.0)

@@ -34,6 +34,17 @@ These releases include breaking alpha cleanup; see the [migration guide](https:/
 when updating an existing integration. The lockfiles pin the versions tested here.
 They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
 
+## Instructions carry the role
+
+Every Dialt session needs `instructions`, and Dialt rejects a session without them. Dialt's
+platform prompt covers what holds for any speaker on a call: the words are spoken aloud, turns
+get interrupted, and the call's facts. It also carries the register of the selected voice. It
+states no role. Your instructions say who the agent is, whose side it is on, what it does and
+the policy it follows, including habits such as asking one short clarifying question when a
+request is unclear. `voice` selects a voice: its TTS voice, register line and listening route
+together. Every recipe here states its agent's role in `instructions`, and a simulated caller
+gets its role from `simulator.instructions` in the same way.
+
 ## Qualification and specialist handoff
 
 [`examples/qualification_handoff`](examples/qualification_handoff) collects configurable qualification fields, handles corrections, obtains explicit consent, and calls a customer-owned specialist handoff. It includes text and voice eval cases plus Python callback seams, and reuses the maintained Twilio bridge for live calls.
@@ -79,7 +90,8 @@ a persistent `ck_` or `dk_` account key).
 A case is one JSON file, the same document the hosted evals API accepts: `name`, `starter` (or
 `target.greeting`, when the agent opens the call and the simulated user answers it), `target`
 (`instructions`, `tools`, `end_call`), `simulator` (`instructions`), `fixtures`, `checks` and
-`limits`. [`examples/simulations/appointment_booking.json`](examples/simulations/appointment_booking.json)
+`limits`. Both sides are Dialt sessions, so `target.instructions` and `simulator.instructions` are
+required and each states that side's role. [`examples/simulations/appointment_booking.json`](examples/simulations/appointment_booking.json)
 is a complete one. Field reference: the [evals guide](https://dialt.com/docs/api/evals/).
 
 The agent ends a call by calling the managed `end_call` tool, which `target.end_call` (default

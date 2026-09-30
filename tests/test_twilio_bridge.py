@@ -16,6 +16,8 @@ from dialt_recipes.telephony_audio import (
 
 SETTINGS = bridge.TwilioBridgeSettings(
     dialt_api_key="dk_test", twilio_auth_token="token", public_base_url="https://voice.example.com/")
+# Dialt rejects a session without instructions; they state the agent's role.
+MODE = bridge.DialtMode(instructions="You answer the phone for an online store.")
 
 
 def test_mulaw_round_trip_preserves_a_tone() -> None:
@@ -157,7 +159,7 @@ def test_run_call_bridge_paces_frames_and_marks(monkeypatch) -> None:
 
     async def run():
         await asyncio.wait_for(bridge.run_call_bridge(
-            websocket, "MZ", "CA-paced", settings=SETTINGS, mode=bridge.DialtMode(),
+            websocket, "MZ", "CA-paced", settings=SETTINGS, mode=MODE,
             hooks=bridge.BridgeHooks(execute_tool=execute_tool, on_event=on_event)), timeout=5)
 
     asyncio.run(run())
@@ -190,7 +192,7 @@ def test_host_end_call_closes_the_session_and_tool_failures_are_results(monkeypa
     async def run():
         session_cls = None
         await asyncio.wait_for(bridge.run_call_bridge(
-            websocket, "MZ", "CA-end", settings=SETTINGS, mode=bridge.DialtMode(),
+            websocket, "MZ", "CA-end", settings=SETTINGS, mode=MODE,
             hooks=bridge.BridgeHooks(execute_tool=execute_tool, end_call=end_call)), timeout=5)
 
     asyncio.run(run())

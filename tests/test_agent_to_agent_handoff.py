@@ -216,6 +216,6 @@ def test_fixed_handoff_result_matches_the_live_shape() -> None:
                                    "caller_confirmed": True})
     # The live result is handoff_requested alone: the pass, not the tool result, tells the
     # specialist who it is. The fixed result adds a note only because no specialist follows in
-    # a hosted or dialt-sim run, and the intake persona has to end the call itself.
+    # a hosted or dialt-sim run, and the intake agent has to end the call itself.
     assert fixed["handoff_requested"] is live["handoff_requested"] is True
     assert set(live) <= set(fixed) and set(fixed) - set(live) == {"note"}
