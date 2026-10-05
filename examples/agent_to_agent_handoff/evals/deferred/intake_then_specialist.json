@@ -8,7 +8,7 @@
     "tools": [
       {
         "name": "handoff_to_agent",
-        "description": "Request a transfer to the scheduling specialist. It returns handoff_requested when intake has requested the transfer, not when the specialist has the call. After that result, finish your turn naturally with transfer intent, without claiming the transfer completed. Before calling it, read the name, date of birth and reason back to the caller and wait for them to confirm, even when they gave everything in their first sentence. Supply the confirmed details.",
+        "description": "Request a transfer to the scheduling specialist. It returns handoff_requested when intake has requested the transfer. The host atomically continues the call with the specialist at this result, so call it without a preamble and do not claim the transition completed. Before calling it, read the name, date of birth and reason back to the caller and wait for them to confirm, even when they gave everything in their first sentence. Supply the confirmed details.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -51,7 +51,7 @@
           ],
           "additionalProperties": false
         },
-        "expected_duration": "instant",
+        "recorded_bridge": "never",
         "status_label": "handover to the automated scheduling specialist"
       },
       {

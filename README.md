@@ -29,7 +29,7 @@ uv sync --frozen
 cp .env.example .env
 ```
 
-Python recipes require `dialt-sdk>=0.40.0`; the browser example uses `@dialt/sdk@0.48.2`.
+Python recipes require `dialt-sdk>=0.43.0`; the browser example uses `@dialt/sdk@0.53.0`.
 These releases include breaking alpha cleanup; see the [migration guide](https://dialt.com/docs/api/migration/)
 when updating an existing integration. The lockfiles pin the versions tested here.
 They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
@@ -53,11 +53,11 @@ gets its role from `simulator.instructions` in the same way.
 
 [`examples/agent_to_agent_handoff`](examples/agent_to_agent_handoff) puts two agents on one
 call: an obviously synthetic intake voice takes the patient's details and calls a hand-off tool.
-After the tool result is sent, the host uses `handoff_agent` to atomically apply the specialist's
-instructions, tools, voice and incoming context. The broker owns the outgoing-turn boundary and
-folds the call so far into a transcript the specialist holds, so it never continues intake's
-sentences. A clinic appointment line is the worked example, with eval cases rendered from the
-workflow, a local host that confirms the pass, and a Twilio wiring sketch.
+The host binds the specialist configuration to that result with `continue_with`, atomically
+recording the result, preventing an old-prompt answer, and applying the specialist's instructions,
+tools, voice, context and first-reply tool choice. A clinic appointment line is the worked
+example, with eval cases rendered from the workflow, a local host that confirms the continuation,
+and a Twilio wiring sketch.
 
 ## Policy agent beside the call
 

@@ -300,12 +300,16 @@ async def _fixture_result(fixtures: dict[str, Fixture], name: str, args: dict[st
 
 Observer = Callable[[SessionEvent, DialtSession], Awaitable[None]]
 ToolResultObserver = Callable[[str, dict[str, Any], Any, str, bool, DialtSession], Awaitable[None]]
+ToolContinuation = Callable[
+    [str, dict[str, Any], Any, str, bool], Awaitable[dict[str, Any] | None]
+]
 
 
 async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                          modality: str = "text",
                          on_target_event: Observer | None = None,
-                         on_target_tool_result: ToolResultObserver | None = None) -> SimulationReport:
+                         on_target_tool_result: ToolResultObserver | None = None,
+                         continue_target_after_tool: ToolContinuation | None = None) -> SimulationReport:
     """Run target and simulated user as two ordinary Dialt sessions.
 
     ``on_target_event(event, session)`` sees every event from the target session as it
@@ -316,6 +320,10 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
     ``on_target_tool_result`` runs in a tracked background task after a target tool result has
     been sent. It is for host work that can wait, such as an acknowledged agent hand-off;
     receive and relay processing continue while it waits.
+
+    ``continue_target_after_tool`` returns an incoming agent configuration before the result is
+    sent. The harness binds it to that terminal result with ``continue_with``; use this for an
+    agent transition whose result and incoming reply must have one atomic owner boundary.
 
     In voice mode each session gets a virtual microphone into the other: a paced stream that
     runs for the whole call, carrying the other side's audio at real time and digital silence in
@@ -416,7 +424,14 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
             case.fixtures, tool_name, event.data.get("args") or {},
             report.fixture_state, session=source,
         )
-        await source.send_tool_result(call_id, value, outcome=outcome, verified=verified)
+        continue_with = None
+        if continue_target_after_tool is not None:
+            continue_with = await continue_target_after_tool(
+                tool_name, event.data.get("args") or {}, value, outcome, verified)
+        result_options = {"outcome": outcome, "verified": verified}
+        if continue_with is not None:
+            result_options["continue_with"] = continue_with
+        continuation_ack = await source.send_tool_result(call_id, value, **result_options)
         start_tool_result_observer(tool_name, event.data.get("args") or {}, value,
                                    outcome, verified, source)
         fixture = case.fixtures.get(tool_name)
@@ -425,6 +440,7 @@ async def run_simulation(url: str, api_key: str, case: SimulationCase, *,
                 "side": "target", "type": "tool_result", "t_ms": event.t_ms,
                 "id": call_id, "name": tool_name, "outcome": outcome,
                 "verified": verified,
+                "continuation_ack": continuation_ack,
                 "fixture": ("unhandled" if fixture is None else "callable"
                             if callable(fixture) else fixture.get("fixture_type", "fixed")
                             if isinstance(fixture, dict) else "fixed"),

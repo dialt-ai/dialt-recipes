@@ -667,6 +667,12 @@ def test_monitor_drain_answers_agent_tools_without_restarting_relays(monkeypatch
         return SimpleNamespace(type=kind, t_ms=1, data=data)
 
     results = []
+    continuation = {
+        'instructions': 'You are the specialist.',
+        'tools': [{'name': 'lookup', 'parameters': {'type': 'object'}}],
+        'tool_choice': {'tool': 'lookup'},
+        'tool_choice_one_shot': True,
+    }
     class Target(_FakeSession):
         async def events(self):
             yield event('asr', text='A manager please', policy_version=1)
@@ -681,6 +687,7 @@ def test_monitor_drain_answers_agent_tools_without_restarting_relays(monkeypatch
 
         async def send_tool_result(self, call_id, value, **kwargs):
             results.append((call_id, value, kwargs))
+            return {'accepted': True, 'status': 'applied'}
 
     class Simulator(_FakeSession):
         async def events(self):
@@ -693,6 +700,11 @@ def test_monitor_drain_answers_agent_tools_without_restarting_relays(monkeypatch
     async def connect(*args, **kwargs):
         return next(sessions)
     monkeypatch.setattr('dialt_recipes.simulation.DialtSession.connect', connect)
+    async def continue_after_tool(name, args, result, outcome, verified):
+        assert (name, args, result, outcome, verified) == (
+            'request_manager', {}, {'available': True}, 'succeeded', True)
+        return continuation
+
     case = SimulationCase.from_dict({
         'name': 'agent tool during monitor drain', 'starter': '',
         'simulator': {'instructions': CALLER},
@@ -704,9 +716,14 @@ def test_monitor_drain_answers_agent_tools_without_restarting_relays(monkeypatch
         'checks': [{'type': 'policy_flag', 'value': 'r', 'delivered': True},
                    {'type': 'tool_called', 'value': 'request_manager'}],
     })
-    report = asyncio.run(run_simulation('ws://test', 'key', replace(case, timeout_s=1)))
+    report = asyncio.run(run_simulation(
+        'ws://test', 'key', replace(case, timeout_s=1),
+        continue_target_after_tool=continue_after_tool))
     assert report.passed
-    assert results == [('action-1', {'available': True}, {'outcome': 'succeeded', 'verified': True})]
+    assert results == [('action-1', {'available': True}, {
+        'outcome': 'succeeded', 'verified': True, 'continue_with': continuation})]
+    tool_result = next(item for item in report.events if item.get('type') == 'tool_result')
+    assert tool_result['continuation_ack'] == {'accepted': True, 'status': 'applied'}
     assert target.sent == simulator.sent == []
     from dialt.policy import PolicyEvidence
     evidence = PolicyEvidence()

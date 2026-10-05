@@ -246,6 +246,59 @@ def test_only_a_tool_error_message_reaches_the_model(monkeypatch, caplog) -> Non
     assert "db.internal" in caplog.text   # the host's own log keeps the full failure
 
 
+def test_tool_continuation_is_bound_to_the_terminal_result(monkeypatch) -> None:
+    websocket, _released = _fake_socket(release_after_media=10**6)
+    end_call = asyncio.Event()
+    sent: list[tuple] = []
+    continuation = {
+        "instructions": "You are the specialist.",
+        "tools": [{"name": "lookup", "parameters": {"type": "object"}}],
+        "context": "Intake collected the account number.",
+        "tool_choice": {"tool": "lookup"},
+        "tool_choice_one_shot": True,
+    }
+
+    async def events(session):
+        async def send_tool_result(tool_id, result, **kwargs):
+            sent.append((tool_id, result, kwargs))
+
+        session.send_tool_result = send_tool_result
+        yield SimpleNamespace(type="tool_call", t_ms=10,
+                              data={"id": "handoff-1", "name": "handoff", "args": {"id": 7}},
+                              audio=None)
+        while not session.closed:
+            await asyncio.sleep(0.01)
+
+    connect, _holder = _fake_connect(events)
+    monkeypatch.setattr(bridge.DialtSession, "connect", connect)
+
+    async def execute_tool(name, args):
+        return {"ready": True}
+
+    async def continue_after_tool(name, args, result, outcome, verified):
+        assert (name, args, result, outcome, verified) == (
+            "handoff", {"id": 7}, {"ready": True}, "succeeded", True)
+        return continuation
+
+    async def on_tool_result(*_args):
+        end_call.set()
+
+    async def run():
+        await asyncio.wait_for(bridge.run_call_bridge(
+            websocket, "MZ", "CA-continuation", settings=SETTINGS, mode=MODE,
+            hooks=bridge.BridgeHooks(
+                execute_tool=execute_tool,
+                continue_after_tool=continue_after_tool,
+                on_tool_result=on_tool_result,
+                end_call=end_call,
+            )), timeout=5)
+
+    asyncio.run(run())
+    assert sent == [("handoff-1", {"ready": True}, {
+        "outcome": "succeeded", "verified": True, "continue_with": continuation,
+    })]
+
+
 def test_receive_stream_start_rejects_bad_and_stopped_streams() -> None:
     class Socket:
         def __init__(self, messages):

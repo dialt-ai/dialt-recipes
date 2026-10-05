@@ -4,11 +4,10 @@ helps. One Dialt session, one conversation, no second connection.
 The example is a clinic appointment line. Intake is an obviously synthetic voice that takes
 the patient's name, date of birth and reason for calling, reads them back, and calls
 `handoff_to_agent` once the caller confirms. The host validates and resolves the tool; intake
-finishes its own turn. When that turn has closed, the host passes the call
-(`HandoffState.pass_call_on`): the broker atomically folds the call so far into a transcript
-the specialist holds and applies the specialist's instructions, tools and voice. A short
-acknowledged note then makes it speak first. Each agent has its own instructions; neither is
-told about the other's rules.
+binds the specialist configuration to that result. The broker records the result, prevents an
+old-prompt answer, folds the call so far into a transcript the specialist holds, applies its
+instructions, tools, voice and lookup-first policy, then starts its reply. Each agent has its own
+instructions; neither is told about the other's rules.
 """
 from __future__ import annotations
 
@@ -16,8 +15,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from dialt import DialtSession
-from dialt_recipes import ConversationPlan, HANDOFF_COMPLETE_CONTEXT, PlanField, pass_call_to
+from dialt_recipes import ConversationPlan, PlanField
 
 DEFAULT_INTAKE_VOICE = "chime"
 DEFAULT_SPECIALIST_VOICE = "southern_us_female"
@@ -93,9 +91,9 @@ def tool_manifest() -> list[dict[str, Any]]:
             "name": "handoff_to_agent",
             "description": (
                 "Request a transfer to the scheduling specialist. It returns handoff_requested "
-                "when intake has requested the transfer, not when the specialist has the call. "
-                "After that result, finish your turn naturally with transfer intent, without "
-                "claiming the transfer completed. Before calling it, read the "
+                "when intake has requested the transfer. The host atomically continues the call "
+                "with the specialist at this result, so call it without a preamble and do not "
+                "claim the transition completed. Before calling it, read the "
                 "name, date of birth and reason back to the caller and wait for them to "
                 "confirm, even when they gave everything in their first sentence. Supply the "
                 "confirmed details."
@@ -116,7 +114,7 @@ def tool_manifest() -> list[dict[str, Any]]:
                 "required": ["summary", "details", "caller_confirmed"],
                 "additionalProperties": False,
             },
-            "expected_duration": "instant",
+            "recorded_bridge": "never",
             "status_label": "handover to the automated scheduling specialist",
         },
         {
@@ -196,29 +194,17 @@ class HandoffState:
                 f"{self.details['name']}, date of birth {self.details['date_of_birth']}. "
                 f"Reason: {self.summary}")
 
-    async def pass_call_on(self, session: DialtSession) -> dict[str, Any]:
-        """Pass the live call once its tool result has been sent.
-
-        The server owns the outgoing-turn boundary and awaits its acknowledgement. The
-        specialist's first turn must be the patient lookup: every rule it has depends on the
-        record, and left to itself the model sometimes spoke appointment facts it had not fetched.
-        """
+    def continuation(self) -> dict[str, Any]:
+        """The complete incoming agent configuration bound to the hand-off tool result."""
         if not self.handed_off:
             raise RuntimeError("the hand-off has not landed")
-        result = await pass_call_to(
-            session, instructions=specialist_instructions(), tools=specialist_tools(),
-            voice=self.specialist_voice, context=self.handover_note(), opener=None,
-        )
-        if result["switched"]:
-            # Existing recipe evidence requires the specialist's first action to be the lookup.
-            await session.set_tool_choice({"tool": "lookup_patient"}, one_shot=True)
-            try:
-                reply = await session.inject_context(HANDOFF_COMPLETE_CONTEXT, role="context", reply=True)
-            except Exception as exc:  # The specialist remains applied if the optional opener fails.
-                result["opener_error"] = str(exc) or type(exc).__name__
-            else:
-                result["reply"] = reply
-                result["reply_started"] = bool(reply.get("reply_started"))
-        self.events.append({"type": "passed", "accepted": result["switched"],
-                            "reply_accepted": bool(result["reply"] and result["reply"].get("accepted"))})
-        return result
+        return {
+            "instructions": specialist_instructions(),
+            "tools": specialist_tools(),
+            "voice": self.specialist_voice,
+            "context": self.handover_note(),
+            # The specialist must ground its first speech in the patient record. This choice is
+            # applied before the atomic continuation starts that reply and then restores auto.
+            "tool_choice": {"tool": "lookup_patient"},
+            "tool_choice_one_shot": True,
+        }
