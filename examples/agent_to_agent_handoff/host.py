@@ -1,8 +1,8 @@
 """Run full-call cases locally with the real host behaviour: the session starts as intake with
-only the hand-off tool declared; after `handoff_to_agent`'s result is sent, the host requests an
-acknowledged server-owned pass (`HandoffState.pass_call_on`). The specialist's instructions,
-tools and voice are applied atomically; then a one-shot lifecycle trigger asks it to speak. Each
-run checks the public handoff acknowledgement that confirms the handoff applied.
+only the hand-off tool declared. The host binds `HandoffState.continuation()` to
+`handoff_to_agent`'s terminal result, so the specialist's instructions, tools, voice, context,
+lookup-first policy and first reply apply atomically. Each run checks the public continuation
+acknowledgement that confirms the switch applied.
 
     uv run python -u examples/agent_to_agent_handoff/host.py [CASE_OR_DIR ...]
 
@@ -27,14 +27,14 @@ from workflow import HandoffState, intake_instructions, intake_tools
 
 async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, dict]:
     state = HandoffState()
-    acks: list[dict] = []
-
     def handoff(args):
         return state.handoff(args)
 
-    async def on_target_tool_result(name, args, result, outcome, verified, session):
-        if name == "handoff_to_agent" and outcome == "succeeded" and verified:
-            acks.append(await state.pass_call_on(session))
+    async def continue_after_tool(name, args, result, outcome, verified):
+        if (name == "handoff_to_agent" and outcome == "succeeded" and verified
+                and not result.get("duplicate")):
+            return state.continuation()
+        return None
 
     case = replace(
         case,
@@ -43,15 +43,20 @@ async def run_case(case, url: str, api_key: str, modality: str) -> tuple[bool, d
         fixtures={**case.fixtures, "handoff_to_agent": handoff},
     )
     report: SimulationReport = await run_simulation(url, api_key, case, modality=modality,
-                                                    on_target_tool_result=on_target_tool_result)
+                                                    continue_target_after_tool=continue_after_tool)
     expects_handoff = any(check.get("type") == "tool_called"
                           and check.get("value") == "handoff_to_agent" for check in case.checks)
+    continuation_acks = [event.get("continuation_ack") for event in report.events
+                         if event.get("name") == "handoff_to_agent"
+                         and event.get("continuation_ack") is not None]
     application_checks = [
         {"type": "application_state", "name": "intake handed off with complete details",
          "pass": state.handed_off, "detail": "" if state.handed_off else "no handoff"},
         {"type": "application_state", "name": "the call was passed to the specialist",
-         "pass": bool(acks) and all(a["switched"] for a in acks),
-         "detail": "" if acks else "the hand-off turn never closed"},
+         "pass": bool(continuation_acks)
+                 and all(ack.get("accepted") and ack.get("status") == "applied"
+                         for ack in continuation_acks),
+         "detail": "" if continuation_acks else "the continuation was not acknowledged"},
     ] if expects_handoff else []
     passed = report.passed and all(check["pass"] for check in application_checks)
     return passed, {

@@ -12,24 +12,24 @@ role texts for your own domain and the mechanics stay the same.
 The hand-off is a tool intake calls once the caller has confirmed the read-back:
 `handoff_to_agent(summary, details, caller_confirmed)`. The host validates it (a call with
 `caller_confirmed` false is refused, so a hand-off cannot land on an unconfirmed read-back) and
-returns `handoff_requested`. Intake finishes its own turn: it tells the caller it is going to pass them
-over and stops.
+returns `handoff_requested`.
 
-After the host sends the hand-off tool result, it calls `session.handoff_agent(...)`. The server
-waits for the outgoing turn, then atomically folds its history and applies the specialist's
-instructions, tools, voice and the handover note as incoming context. A caller who starts talking
-as that acknowledgement arrives therefore reaches an agent that already has the confirmed details.
+The host sends that result once with `continue_with={...}`. The server atomically records the
+result, prevents intake from generating a post-result answer, folds history, applies the
+specialist's instructions, tools, voice, handover context and one-shot lookup policy, then starts
+one specialist reply. A caller who starts talking at the boundary therefore reaches an agent that
+already has the confirmed details.
 
-This recipe keeps its existing one-shot `set_tool_choice({"tool": "lookup_patient"})` after an
-accepted switch: live evidence requires the specialist to look up the record before speaking
-about an appointment. It then calls `inject_context("The agent handoff is complete.", reply=True)`
-once. That is a lifecycle trigger, not prescribed spoken wording. If the caller has claimed the
-floor, its acknowledgement may be rejected; the handoff remains applied, the agent still has the
-note, and the host does not retry or infer idleness.
+The continuation includes `tool_choice={"tool": "lookup_patient"}` with
+`tool_choice_one_shot=True`: live evidence requires the specialist to look up the record before
+speaking about an appointment. The broker applies that policy before it starts the specialist
+reply and restores automatic tool choice afterward. There is no post-result setter or separate
+context injection to race the reply.
 
-The host records separate `handoff_applied` and `reply` outcomes. An opener rejection is never a
-reason to send another handoff, repeat the note, or attempt a second fold. `host.py` uses the
-post-tool-result simulation hook, so its acknowledgement wait does not block event relaying.
+The hand-off tool declares `recorded_bridge: "never"`, so Dialt does not insert prerecorded
+filler while waiting for the host. Model-authored speech before the tool call remains ordinary
+conversation speech. A slow host or cold incoming model is therefore heard as silence, bounded by
+the tool timeout; the recipe chooses that tradeoff because filler at every node switch is worse.
 
 Each agent has only its own instructions (`workflow.intake_instructions()`,
 `workflow.specialist_instructions()`). Neither is told the other's rules, and the prompt does
@@ -74,8 +74,8 @@ uv run dialt-evals push examples/agent_to_agent_handoff/evals/intake --modality 
 ```
 
 `evals/full_call/` declares every tool for its fixtures and runs the whole call. They are for
-`host.py`, which starts each one as intake, requests the pass after its hand-off tool result is
-sent, and reports whether the public handoff acknowledgement says it applied:
+`host.py`, which starts each one as intake, binds the pass to its hand-off tool result, and reports
+whether the public continuation acknowledgement says it applied:
 
 ```sh
 uv run python -u examples/agent_to_agent_handoff/host.py                # voice, the default
@@ -90,8 +90,7 @@ call, and their fixed hand-off result ends the call at the hand-off.
 Reuse `examples/integrations/twilio`. Build state per call and route `handoff_to_agent` to
 `HandoffState.handoff`. The bridge sends the model only a `ToolError`'s message, so re-raise its
 validation errors as `ToolError` (from `dialt_recipes.twilio`) to keep the read-back guidance.
-`BridgeHooks.on_tool_result` runs after the bridge has sent that result, in the tool task rather
-than its media/event loop:
+`BridgeHooks.continue_after_tool` returns the continuation before the bridge sends that result:
 
 ```python
 def call_hooks():
@@ -106,13 +105,16 @@ def call_hooks():
                 raise ToolError(str(exc)) from exc
         ...
 
-    async def on_tool_result(name, args, result, outcome, verified, session):
-        if name == "handoff_to_agent" and outcome == "succeeded" and verified:
-            await state.pass_call_on(session)
+    async def continue_after_tool(name, args, result, outcome, verified):
+        if (name == "handoff_to_agent" and outcome == "succeeded" and verified
+                and not result.get("duplicate")):
+            return state.continuation()
+        return None
 
     mode = DialtMode(voice=state.intake_voice, instructions=intake_instructions(),
                      tools=intake_tools(), greeting=GREETING)
-    return mode, BridgeHooks(execute_tool=execute_tool, on_tool_result=on_tool_result)
+    return mode, BridgeHooks(execute_tool=execute_tool,
+                             continue_after_tool=continue_after_tool)
 ```
 
 Because the pass happens inside the Dialt session, Twilio sees one uninterrupted media stream.

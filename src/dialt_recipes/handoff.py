@@ -14,13 +14,13 @@ async def pass_call_to(session: DialtSession, *, instructions: str, tools: list[
                        opener: str | None = HANDOFF_COMPLETE_CONTEXT) -> dict[str, Any]:
     """Replace the active agent, then ask the replacement to reply.
 
-    ``handoff_agent`` owns the outgoing-turn boundary and atomically folds history with the
+    ``continue_with_agent`` owns the outgoing-turn boundary and atomically folds history with the
     incoming configuration, including the incoming agent's context. A separate acknowledged
     lifecycle injection asks the new agent to reply. Its rejection, for example because the
     caller claimed the floor, never changes the fact that the handoff applied and is not retried.
     This helper is stateless, so a session may be passed through more than one agent in sequence.
     """
-    handoff = await session.handoff_agent(
+    handoff = await session.continue_with_agent(
         instructions=instructions, tools=tools, voice=voice, context=context,
         operation_id=operation_id,
     )

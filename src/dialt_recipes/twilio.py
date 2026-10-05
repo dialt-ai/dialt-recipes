@@ -42,6 +42,9 @@ MAX_MULAW_FRAME_BYTES = 4_096
 
 EventHook = Callable[[Any], Awaitable[None]]
 ToolHook = Callable[[str, dict[str, Any]], Awaitable[Any]]
+ToolContinuationHook = Callable[
+    [str, dict[str, Any], Any, str, bool], Awaitable[dict[str, Any] | None]
+]
 ToolResultHook = Callable[[str, dict[str, Any], Any, str, bool, DialtSession], Awaitable[None]]
 SessionHook = Callable[[DialtSession], Awaitable[None]]
 
@@ -167,6 +170,9 @@ class BridgeHooks:
         (transcripts, tool timing, permission outcomes). Must not block for long.
     on_connected(session): once the Dialt session is open, before audio flows (start a
         recording, inject context).
+    continue_after_tool(name, args, result, outcome, verified): return the next agent
+        configuration when this result is an agent boundary. The bridge binds it to the terminal
+        result so result recording, agent initialization and the incoming reply are atomic.
     on_tool_result(name, args, result, outcome, verified, session): runs after the bridge has
         sent a tool result. It runs in that tool's task, so a server-acknowledged follow-up does
         not block event or media processing.
@@ -179,6 +185,7 @@ class BridgeHooks:
     on_connected: SessionHook | None = None
     end_call: asyncio.Event | None = None
     on_tool_result: ToolResultHook | None = None
+    continue_after_tool: ToolContinuationHook | None = None
 
 
 async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
@@ -234,7 +241,14 @@ async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
                     # Exception text stays in the host's log: it can hold internal details.
                     logger.exception("Dialt tool %s failed call_sid=%s", name, call_sid)
                     result, outcome, verified = {"error": "tool_failed"}, "failed", False
-                await session.send_tool_result(tool_id, result, outcome=outcome, verified=verified)
+                continue_with = None
+                if hooks.continue_after_tool is not None:
+                    continue_with = await hooks.continue_after_tool(
+                        name, args, result, outcome, verified)
+                result_options = {"outcome": outcome, "verified": verified}
+                if continue_with is not None:
+                    result_options["continue_with"] = continue_with
+                await session.send_tool_result(tool_id, result, **result_options)
                 if hooks.on_tool_result is not None:
                     try:
                         await hooks.on_tool_result(name, args, result, outcome, verified, session)

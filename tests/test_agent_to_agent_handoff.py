@@ -1,4 +1,3 @@
-import asyncio
 import importlib.util
 import json
 import sys
@@ -115,88 +114,30 @@ def test_handoff_validates_before_anything_changes_on_the_call() -> None:
     assert not state.handed_off and state.events == []
 
 
-def test_handoff_records_once_and_requests_the_specialist_after_the_tool_result() -> None:
-    """The handoff request owns the outgoing-turn boundary and atomically applies the new
-    agent. The existing one-shot tool choice preserves the recipe's lookup-first evidence, and
-    the context note is sent only after the server accepted the handoff."""
-    class Session:
-        def __init__(self) -> None:
-            self.calls: list[tuple] = []
-
-        async def handoff_agent(self, *, instructions, tools, voice, context, operation_id=None):
-            self.calls.append(("handoff_agent", instructions, [tool["name"] for tool in tools],
-                               voice, context, operation_id))
-            return {"accepted": True, "status": "applied"}
-
-        async def set_tool_choice(self, choice, *, one_shot=False):
-            self.calls.append(("set_tool_choice", choice, one_shot))
-
-        async def inject_context(self, text, *, role, reply):
-            self.calls.append(("inject_context", text, role, reply))
-            return {"accepted": True, "reply_started": True}
-
+def test_handoff_records_once_and_builds_one_atomic_continuation() -> None:
+    """The result-bound continuation carries all incoming agent state, including the one-shot
+    lookup policy, so no post-result setter or reply trigger can race the incoming reply."""
     state = HandoffState(intake_voice="chime", specialist_voice="warm")
     call = {"summary": "Appointment query.", "details": DETAILS, "caller_confirmed": True}
     assert state.handoff(dict(call)) == {"handoff_requested": True}
     assert state.handoff(dict(call)) == {"handoff_requested": True, "duplicate": True}
     assert state.details == DETAILS and state.summary == "Appointment query."
 
-    session = Session()
-    ack = asyncio.run(state.pass_call_on(session))
-    assert ack["switched"] is True and ack["status"] == "applied"
-    assert ack["reply"]["accepted"] is True
-    assert [c[0] for c in session.calls] == ["handoff_agent", "set_tool_choice", "inject_context"]
-    assert session.calls[0] == ("handoff_agent", WORKFLOW.specialist_instructions(),
-                                ["lookup_patient", "reschedule_appointment"], "warm",
-                                state.handover_note(), None)
-    assert session.calls[1] == ("set_tool_choice", {"tool": "lookup_patient"}, True)
-    note = session.calls[2]
-    assert note[2:] == ("context", True)
-    assert note[1] == WORKFLOW.HANDOFF_COMPLETE_CONTEXT
-    assert [event["type"] for event in state.events] == ["handoff", "passed"]
-
-
-def test_rejected_handoff_does_not_inject_a_reply() -> None:
-    class Session:
-        async def handoff_agent(self, **kwargs):
-            return {"accepted": False, "reason": "rejected"}
-
-        async def set_tool_choice(self, *args, **kwargs):
-            raise AssertionError("a rejected handoff must not change tool choice")
-
-        async def inject_context(self, *args, **kwargs):
-            raise AssertionError("a rejected handoff must not request a reply")
-
-    state = HandoffState()
-    state.handoff({"summary": "Appointment query.", "details": DETAILS, "caller_confirmed": True})
-    assert asyncio.run(state.pass_call_on(Session())) == {
-        "accepted": False, "status": "rejected", "switched": False,
-        "handoff": {"accepted": False, "reason": "rejected"}, "reply": None,
-        "reply_started": False,
+    continuation = state.continuation()
+    assert continuation == {
+        "instructions": WORKFLOW.specialist_instructions(),
+        "tools": WORKFLOW.specialist_tools(),
+        "voice": "warm",
+        "context": state.handover_note(),
+        "tool_choice": {"tool": "lookup_patient"},
+        "tool_choice_one_shot": True,
     }
-
-
-def test_opener_exception_keeps_the_handoff_applied() -> None:
-    class Session:
-        async def handoff_agent(self, **kwargs):
-            return {"accepted": True, "status": "applied"}
-
-        async def set_tool_choice(self, *args, **kwargs):
-            return None
-
-        async def inject_context(self, *args, **kwargs):
-            raise RuntimeError("connection closed")
-
-    state = HandoffState()
-    state.handoff({"summary": "Appointment query.", "details": DETAILS, "caller_confirmed": True})
-    ack = asyncio.run(state.pass_call_on(Session()))
-    assert ack["switched"] and ack["status"] == "applied"
-    assert ack["reply"] is None and ack["opener_error"] == "connection closed"
+    assert [event["type"] for event in state.events] == ["handoff"]
 
 
 def test_the_pass_needs_a_landed_handoff() -> None:
     with pytest.raises(RuntimeError, match="has not landed"):
-        asyncio.run(HandoffState().pass_call_on(object()))
+        HandoffState().continuation()
 
 
 def test_voices_come_from_the_environment(monkeypatch) -> None:

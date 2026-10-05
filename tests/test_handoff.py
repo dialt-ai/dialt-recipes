@@ -8,8 +8,8 @@ def test_pass_call_to_can_handoff_agents_sequentially() -> None:
         def __init__(self) -> None:
             self.calls = []
 
-        async def handoff_agent(self, **kwargs):
-            self.calls.append(("handoff_agent", kwargs))
+        async def continue_with_agent(self, **kwargs):
+            self.calls.append(("continue_with_agent", kwargs))
             return {"accepted": True, "status": "applied"}
 
         async def inject_context(self, note, *, role, reply):
@@ -22,14 +22,14 @@ def test_pass_call_to_can_handoff_agents_sequentially() -> None:
     asyncio.run(pass_call_to(session, instructions="second", tools=[], voice="two", context="two",
                              operation_id="two"))
     assert [call[0] for call in session.calls] == [
-        "handoff_agent", "inject_context", "handoff_agent", "inject_context"]
+        "continue_with_agent", "inject_context", "continue_with_agent", "inject_context"]
     assert session.calls[2][1]["operation_id"] == "two"
     assert session.calls[0][1]["context"] == "one"
 
 
 def test_pass_call_to_does_not_inject_after_rejection() -> None:
     class Session:
-        async def handoff_agent(self, **kwargs):
+        async def continue_with_agent(self, **kwargs):
             return {"accepted": False}
 
         async def inject_context(self, *args, **kwargs):
@@ -42,7 +42,7 @@ def test_pass_call_to_does_not_inject_after_rejection() -> None:
 
 def test_opener_exception_does_not_hide_an_applied_handoff() -> None:
     class Session:
-        async def handoff_agent(self, **kwargs):
+        async def continue_with_agent(self, **kwargs):
             return {"accepted": True, "status": "applied"}
 
         async def inject_context(self, *args, **kwargs):
