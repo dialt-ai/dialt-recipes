@@ -1,0 +1,11 @@
+.env
+.venv/
+call.json
+outbound_calls.sqlite3
+outbound_calls.sqlite3-shm
+outbound_calls.sqlite3-wal
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
