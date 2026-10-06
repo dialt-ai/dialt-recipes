@@ -38,7 +38,7 @@ The webhook returns `<Connect><Stream>`. The bridge:
 
 - verifies Twilio signatures for the HTTP and WebSocket requests;
 - converts Twilio's 8 kHz G.711 mu-law audio to Dialt's 16 kHz wire format;
-- converts Dialt output back to Twilio audio; and
+- requests 8 kHz Dialt output and converts its PCM samples to G.711 mu-law without resampling; and
 - maps Twilio `mark` and `clear` playback state to Dialt interruption events.
 
 ## Add application tools

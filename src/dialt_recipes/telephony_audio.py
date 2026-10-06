@@ -1,8 +1,7 @@
-"""Stateful G.711 mu-law and sample-rate conversion for Twilio Media Streams.
+"""G.711 mu-law conversion and caller-audio resampling for Twilio Media Streams.
 
-Twilio carries 8 kHz G.711 mu-law. Dialt receives and emits 16 kHz PCM16.
-Each direction owns a streaming SoXR resampler so filtering remains continuous across
-WebSocket messages.
+Twilio carries 8 kHz G.711 mu-law. Dialt receives caller audio at 16 kHz and is configured to
+emit assistant audio at 8 kHz. Only caller audio needs streaming sample-rate conversion.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ import soxr
 
 
 TWILIO_SAMPLE_RATE = 8_000
-DIALT_SAMPLE_RATE = 16_000
+DIALT_INPUT_SAMPLE_RATE = 16_000
 _MULAW_BIAS = 0x84
 _MULAW_CLIP = 32_635
 
@@ -46,14 +45,11 @@ def encode_mulaw(samples: np.ndarray) -> bytes:
 
 
 class TelephonyAudioBridge:
-    """Convert streaming audio between Twilio mu-law 8 kHz and PCM16 16 kHz."""
+    """Convert Twilio mu-law to 16 kHz input PCM and 8 kHz output PCM back to mu-law."""
 
     def __init__(self) -> None:
         self._to_dialt = soxr.ResampleStream(
-            TWILIO_SAMPLE_RATE, DIALT_SAMPLE_RATE, 1, dtype="int16", quality="HQ"
-        )
-        self._to_twilio = soxr.ResampleStream(
-            DIALT_SAMPLE_RATE, TWILIO_SAMPLE_RATE, 1, dtype="int16", quality="HQ"
+            TWILIO_SAMPLE_RATE, DIALT_INPUT_SAMPLE_RATE, 1, dtype="int16", quality="HQ"
         )
         self._pcm_byte_remainder = b""
         self._outbound_finished = False
@@ -67,9 +63,9 @@ class TelephonyAudioBridge:
         return resampled.astype("<i2", copy=False).tobytes()
 
     def dialt_to_twilio(self, data: bytes, *, final: bool = False) -> bytes:
-        """Resample 16 kHz PCM16 and encode it as 8 kHz G.711 mu-law."""
+        """Encode Dialt's negotiated 8 kHz PCM16 output as G.711 mu-law."""
         if self._outbound_finished:
-            raise RuntimeError("outbound resampler has already been finalized")
+            raise RuntimeError("outbound encoder has already been finalized")
 
         raw = self._pcm_byte_remainder + data
         usable_bytes = len(raw) - (len(raw) % 2)
@@ -77,9 +73,8 @@ class TelephonyAudioBridge:
         if final and self._pcm_byte_remainder:
             raise ValueError("final PCM16 chunk ends with a partial sample")
         samples = np.frombuffer(raw[:usable_bytes], dtype="<i2")
-        resampled = self._to_twilio.resample_chunk(samples, last=final)
         self._outbound_finished = final
-        return encode_mulaw(resampled)
+        return encode_mulaw(samples)
 
 
 def mulaw_8k_to_pcm16_16k(data: bytes) -> bytes:
@@ -92,4 +87,6 @@ def mulaw_8k_to_pcm16_16k(data: bytes) -> bytes:
 
 def pcm16_16k_to_mulaw_8k(data: bytes) -> bytes:
     """One-shot compatibility wrapper."""
-    return TelephonyAudioBridge().dialt_to_twilio(data, final=True)
+    samples = np.frombuffer(data, dtype="<i2")
+    resampled = soxr.resample(samples, DIALT_INPUT_SAMPLE_RATE, TWILIO_SAMPLE_RATE, quality="HQ")
+    return encode_mulaw(resampled)
