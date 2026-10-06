@@ -198,6 +198,7 @@ async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
 
     async with await DialtSession.connect(
         settings.dialt_url, session_id=call_sid[:64], api_key=settings.dialt_api_key, mode=mode,
+        output_sample_rate=TWILIO_SR,
     ) as session:
         tool_tasks: dict[str, asyncio.Task[None]] = {}
         if hooks.on_connected is not None:

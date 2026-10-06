@@ -10,6 +10,7 @@ from dialt_recipes import twilio as bridge
 from dialt_recipes.telephony_audio import (
     TelephonyAudioBridge,
     decode_mulaw,
+    encode_mulaw,
     mulaw_8k_to_pcm16_16k,
     pcm16_16k_to_mulaw_8k,
 )
@@ -31,8 +32,9 @@ def test_mulaw_round_trip_preserves_a_tone() -> None:
 
 
 def test_streamed_outbound_matches_one_shot_across_odd_byte_chunks() -> None:
-    pcm = (np.random.default_rng(1).normal(0, 3000, 6400)).astype("<i2").tobytes()
-    one_shot = pcm16_16k_to_mulaw_8k(pcm)
+    samples = (np.random.default_rng(1).normal(0, 3000, 3200)).astype("<i2")
+    pcm = samples.tobytes()
+    one_shot = encode_mulaw(samples)
     streamed = TelephonyAudioBridge()
     parts = [pcm[:333], pcm[333:2000], pcm[2000:]]
     out = b"".join(streamed.dialt_to_twilio(part) for part in parts)
@@ -143,7 +145,7 @@ def test_run_call_bridge_paces_frames_and_marks(monkeypatch) -> None:
     websocket, released = _fake_socket(release_after_media=4)
 
     async def events(session):
-        yield SimpleNamespace(type="audio", t_ms=20, data={}, audio=np.zeros(3200, dtype=np.float32))
+        yield SimpleNamespace(type="audio", t_ms=20, data={}, audio=np.zeros(1600, dtype=np.float32))
         yield SimpleNamespace(type="done", t_ms=40, data={"turn_id": "turn-1"}, audio=None)
         await released.wait()
 
@@ -170,6 +172,7 @@ def test_run_call_bridge_paces_frames_and_marks(monkeypatch) -> None:
     assert all(len(m["media"]["payload"]) <= 216 for m in media)
     assert seen == ["audio", "done"]
     assert holder["connect_args"] == (bridge.DEFAULT_REALTIME_URL,)
+    assert holder["connect_kwargs"]["output_sample_rate"] == 8000
 
 
 def test_host_end_call_closes_the_session_and_tool_failures_are_results(monkeypatch) -> None:

@@ -16,6 +16,7 @@ from bridge import (
 from dialt_recipes.telephony_audio import (
     TelephonyAudioBridge,
     decode_mulaw,
+    encode_mulaw,
     mulaw_8k_to_pcm16_16k,
     pcm16_16k_to_mulaw_8k,
 )
@@ -42,9 +43,9 @@ def test_mulaw_tone_round_trip_preserves_shape() -> None:
     assert np.corrcoef(source, decoded)[0, 1] > 0.98
 
 def test_streamed_outbound_matches_one_shot_across_odd_byte_chunks() -> None:
-    t = np.arange(16_000, dtype=np.float64) / 16_000
+    t = np.arange(8_000, dtype=np.float64) / 8_000
     source = (np.sin(2 * np.pi * 731 * t) * 12_000).astype("<i2").tobytes()
-    expected = pcm16_16k_to_mulaw_8k(source)
+    expected = encode_mulaw(np.frombuffer(source, dtype="<i2"))
 
     audio = TelephonyAudioBridge()
     chunks: list[bytes] = []
@@ -321,7 +322,7 @@ def test_bridge_paces_outbound_audio_and_drains_before_closing(monkeypatch) -> N
 
     class FakeSession:
         async def events(self):
-            yield SimpleNamespace(type="audio", t_ms=20, data={}, audio=np.zeros(3200, dtype=np.float32))
+            yield SimpleNamespace(type="audio", t_ms=20, data={}, audio=np.zeros(1600, dtype=np.float32))
             yield SimpleNamespace(type="done", t_ms=40, data={"turn_id": "turn-1"}, audio=None)
             await released.wait()
 
@@ -341,7 +342,6 @@ def test_bridge_paces_outbound_audio_and_drains_before_closing(monkeypatch) -> N
 
         async def send_json(self, message) -> None:
             self.sent.append(message)
-            # The streaming resampler holds back part of the first chunk until the final flush.
             if sum(1 for m in self.sent if m.get("event") == "media") >= 4:
                 released.set()
 
