@@ -152,6 +152,7 @@ async def launch_call(request: OutboundCallRequest, settings: Settings, store: C
         "status_callback_method": "POST",
         "status_callback_event": ["initiated", "ringing", "answered", "completed"],
         "timeout": settings.ring_timeout_s,
+        "time_limit": settings.call_time_limit_s,
         "record": False,
     }
     if settings.machine_detection == "human-only":

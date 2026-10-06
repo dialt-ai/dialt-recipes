@@ -22,7 +22,6 @@ from store import CallAttempt, CallStore
 from workflow import (
     CALLBACK_REQUEST_RECORDED,
     DEFAULT_VOICE,
-    DEMO_REMINDER,
     ReminderContext,
     greeting,
     instructions,
@@ -255,7 +254,7 @@ async def _close_websocket(websocket: WebSocket, code: int) -> None:
 async def _run_bridge(websocket: WebSocket, stream_sid: str, call_sid: str,
                       attempt: CallAttempt, settings: Settings) -> None:
     context = ReminderContext(
-        business_name=DEMO_REMINDER.business_name,
+        business_name=settings.business_name,
         recipient_first_name=attempt.recipient_name,
         appointment_summary=attempt.appointment_summary,
     )
@@ -264,6 +263,11 @@ async def _run_bridge(websocket: WebSocket, stream_sid: str, call_sid: str,
         instructions=instructions(context),
         greeting=greeting(context),
         tools=tool_manifest(),
+        end_call=True,
+        end_call_when=(
+            "after the required outcome has been recorded, when identity verification cannot "
+            "continue, or when a required tool fails; finish with a brief truthful goodbye"
+        ),
     )
 
     async def execute_tool(name: str, args: dict[str, Any]) -> Any:

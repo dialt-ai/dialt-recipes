@@ -11,6 +11,8 @@ from dialt_recipes.twilio import TwilioBridgeSettings
 
 
 _E164 = re.compile(r"^\+[1-9]\d{7,14}$")
+DEFAULT_BUSINESS_NAME = "Northstar Home Services"
+DEFAULT_DIALT_URL = "wss://api.dialt.com/v1/realtime"
 
 
 def _clock(value: str, name: str) -> time:
@@ -25,12 +27,15 @@ def _clock(value: str, name: str) -> time:
 class Settings(TwilioBridgeSettings):
     """Configuration shared by the outbound launcher and authenticated callback host."""
 
+    dialt_url: str = DEFAULT_DIALT_URL
     twilio_account_sid: str = ""
     twilio_from_number: str = ""
+    business_name: str = DEFAULT_BUSINESS_NAME
     state_db: Path = Path("outbound_calls.sqlite3")
     voice: str | None = None
     machine_detection: str = "human-only"
     ring_timeout_s: int = 30
+    call_time_limit_s: int = 180
     allowed_countries: tuple[str, ...] = ("US",)
     calling_window_start: time = time(9, 0)
     calling_window_end: time = time(20, 0)
@@ -63,19 +68,31 @@ class Settings(TwilioBridgeSettings):
         if not _E164.fullmatch(from_number):
             raise RuntimeError("TWILIO_FROM_NUMBER must be in E.164 format")
 
+        configured_business_name = os.environ.get("OUTBOUND_BUSINESS_NAME")
+        if configured_business_name is None:
+            business_name = DEFAULT_BUSINESS_NAME
+        else:
+            business_name = configured_business_name.strip()
+            if not business_name:
+                raise RuntimeError("OUTBOUND_BUSINESS_NAME must be non-empty when supplied")
+
         machine_detection = os.environ.get("OUTBOUND_MACHINE_DETECTION", "human-only").strip().lower()
         if machine_detection not in {"human-only", "off"}:
             raise RuntimeError("OUTBOUND_MACHINE_DETECTION must be human-only or off")
 
         try:
             ring_timeout_s = int(os.environ.get("OUTBOUND_RING_TIMEOUT_S", "30"))
+            call_time_limit_s = int(os.environ.get("OUTBOUND_CALL_TIME_LIMIT_S", "180"))
             max_active_calls = int(os.environ.get("OUTBOUND_MAX_ACTIVE_CALLS", "1"))
         except ValueError:
             raise RuntimeError(
-                "OUTBOUND_RING_TIMEOUT_S and OUTBOUND_MAX_ACTIVE_CALLS must be integers"
+                "OUTBOUND_RING_TIMEOUT_S, OUTBOUND_CALL_TIME_LIMIT_S, and "
+                "OUTBOUND_MAX_ACTIVE_CALLS must be integers"
             ) from None
         if not 10 <= ring_timeout_s <= 600:
             raise RuntimeError("OUTBOUND_RING_TIMEOUT_S must be between 10 and 600")
+        if not 30 <= call_time_limit_s <= 600:
+            raise RuntimeError("OUTBOUND_CALL_TIME_LIMIT_S must be between 30 and 600")
         if not 1 <= max_active_calls <= 100:
             raise RuntimeError("OUTBOUND_MAX_ACTIVE_CALLS must be between 1 and 100")
 
@@ -103,13 +120,15 @@ class Settings(TwilioBridgeSettings):
             dialt_api_key=os.environ["DIALT_API_KEY"].strip(),
             twilio_auth_token=os.environ["TWILIO_AUTH_TOKEN"].strip(),
             public_base_url=public_base_url,
-            dialt_url=os.environ.get("DIALT_URL", "wss://dialt.com/ws").strip(),
+            dialt_url=os.environ.get("DIALT_URL", DEFAULT_DIALT_URL).strip(),
             twilio_account_sid=account_sid,
             twilio_from_number=from_number,
+            business_name=business_name,
             state_db=Path(os.environ.get("OUTBOUND_STATE_DB", "outbound_calls.sqlite3")),
             voice=os.environ.get("DIALT_VOICE") or None,
             machine_detection=machine_detection,
             ring_timeout_s=ring_timeout_s,
+            call_time_limit_s=call_time_limit_s,
             allowed_countries=allowed_countries,
             calling_window_start=calling_window_start,
             calling_window_end=calling_window_end,

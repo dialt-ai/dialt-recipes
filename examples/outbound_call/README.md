@@ -61,9 +61,13 @@ the surrounding repository checkout. If you copy only this directory elsewhere, 
 `[tool.uv.sources]` section from `pyproject.toml`, run `uv lock` once to resolve the declared Git
 dependency, and then use `uv sync --frozen`.
 
-Before a live call, replace the demonstration business name in `workflow.py`. Keep that
-server-authored value separate from the per-call JSON. The recipe only stores callback requests;
-it has no scheduling queue or coordinator integration and must not promise a callback or timing.
+Set `OUTBOUND_BUSINESS_NAME` in the host environment to the server-owned business identity, for
+example `Example Service Center`. It is optional; when absent, the recipe retains the `Northstar Home
+Services` demonstration identity so the checked-in evals remain reproducible. A supplied blank
+value is rejected. Keep this setting separate from the per-call JSON. The recipe only stores
+callback requests; it has no scheduling queue or coordinator integration and must not promise a
+callback or timing. `DIALT_URL` is optional and defaults to
+`wss://api.dialt.com/v1/realtime`.
 
 The default `OUTBOUND_MACHINE_DETECTION=human-only` connects only an answer webhook whose
 `AnsweredBy` value is exactly `human`; every other or missing classification receives immediate
@@ -73,9 +77,10 @@ answered endpoints to reach the agent; this recipe does not implement a separate
 voicemail message.
 
 `OUTBOUND_ALLOWED_COUNTRIES` is a comma-separated ISO alpha-2 allowlist. Keep it narrow. The
-ring timeout is bounded by `OUTBOUND_RING_TIMEOUT_S`; `OUTBOUND_MAX_ACTIVE_CALLS` limits
-concurrent non-terminal attempts; and `recipient_timezone` in each request is checked against
-the configured local calling window (09:00–20:00 by default).
+ring timeout is bounded by `OUTBOUND_RING_TIMEOUT_S`, and `OUTBOUND_CALL_TIME_LIMIT_S` sets a
+30–600 second provider-enforced maximum connected-call duration (180 seconds by default).
+`OUTBOUND_MAX_ACTIVE_CALLS` limits concurrent non-terminal attempts; and `recipient_timezone`
+in each request is checked against the configured local calling window (09:00–20:00 by default).
 
 ## Describe exactly one authorized call
 

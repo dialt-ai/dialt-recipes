@@ -90,8 +90,10 @@ def set_base_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     for name in (
         "DIALT_URL",
         "DIALT_VOICE",
+        "OUTBOUND_BUSINESS_NAME",
         "OUTBOUND_MACHINE_DETECTION",
         "OUTBOUND_RING_TIMEOUT_S",
+        "OUTBOUND_CALL_TIME_LIMIT_S",
         "OUTBOUND_ALLOWED_COUNTRIES",
         "OUTBOUND_CALLING_WINDOW_START",
         "OUTBOUND_CALLING_WINDOW_END",
@@ -108,8 +110,11 @@ def test_settings_load_validated_defaults(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert settings.twilio_account_sid == ACCOUNT_SID
     assert settings.twilio_from_number == FROM_NUMBER
     assert settings.public_base_url == "https://voice.example.com"
+    assert settings.business_name == "Northstar Home Services"
+    assert settings.dialt_url == "wss://api.dialt.com/v1/realtime"
     assert settings.machine_detection == "human-only"
     assert settings.ring_timeout_s == 30
+    assert settings.call_time_limit_s == 180
     assert settings.allowed_countries == ("US",)
     assert settings.calling_window_start == time(9, 0)
     assert settings.calling_window_end == time(20, 0)
@@ -124,9 +129,12 @@ def test_settings_load_validated_defaults(monkeypatch: pytest.MonkeyPatch, tmp_p
         ("PUBLIC_BASE_URL", "https://voice.example.com/callbacks", "origin without a path"),
         ("TWILIO_ACCOUNT_SID", "ACshort", "AC-prefixed"),
         ("TWILIO_FROM_NUMBER", "415-555-0100", "E.164"),
+        ("OUTBOUND_BUSINESS_NAME", "   ", "must be non-empty"),
         ("OUTBOUND_MACHINE_DETECTION", "voicemail", "human-only or off"),
         ("OUTBOUND_RING_TIMEOUT_S", "9", "between 10 and 600"),
         ("OUTBOUND_RING_TIMEOUT_S", "not-an-integer", "must be integers"),
+        ("OUTBOUND_CALL_TIME_LIMIT_S", "29", "between 30 and 600"),
+        ("OUTBOUND_CALL_TIME_LIMIT_S", "601", "between 30 and 600"),
         ("OUTBOUND_MAX_ACTIVE_CALLS", "0", "between 1 and 100"),
         ("OUTBOUND_ALLOWED_COUNTRIES", "USA", "ISO alpha-2"),
         ("OUTBOUND_CALLING_WINDOW_START", "9am", "HH:MM"),
@@ -154,6 +162,15 @@ def test_settings_report_all_missing_required_values(
     monkeypatch.delenv("TWILIO_FROM_NUMBER")
     with pytest.raises(RuntimeError, match=r"DIALT_API_KEY.*TWILIO_FROM_NUMBER"):
         Settings.from_env()
+
+
+def test_settings_loads_server_owned_business_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    set_base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("OUTBOUND_BUSINESS_NAME", "  Example Service Center  ")
+
+    assert Settings.from_env().business_name == "Example Service Center"
 
 
 def test_load_request_requires_an_exact_string_only_document(tmp_path: Path) -> None:
@@ -457,7 +474,7 @@ def test_launch_call_uses_exact_safe_twilio_arguments(tmp_path: Path, store: Cal
             calls.append(kwargs)
             return SimpleNamespace(sid=CALL_SID, status="queued")
 
-    settings = make_settings(tmp_path, ring_timeout_s=42)
+    settings = make_settings(tmp_path, ring_timeout_s=42, call_time_limit_s=123)
     attempt, created = asyncio.run(
         dialer.launch_call(
             make_request(), settings, store, client=SimpleNamespace(calls=FakeCalls()),
@@ -477,6 +494,7 @@ def test_launch_call_uses_exact_safe_twilio_arguments(tmp_path: Path, store: Cal
         "status_callback_method": "POST",
         "status_callback_event": ["initiated", "ringing", "answered", "completed"],
         "timeout": 42,
+        "time_limit": 123,
         "record": False,
         "machine_detection": "Enable",
     }]
@@ -929,7 +947,9 @@ def test_bridge_builds_private_call_context_and_routes_tools_to_the_attempt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, store: CallStore,
     callback_requested: bool,
 ) -> None:
-    settings = make_settings(tmp_path, voice="custom_voice")
+    settings = make_settings(
+        tmp_path, voice="custom_voice", business_name="Example Service Center"
+    )
     attempt = reserve_bound(store)
     monkeypatch.setattr(host, "get_store", lambda: store)
     captured: dict[str, Any] = {}
@@ -946,6 +966,13 @@ def test_bridge_builds_private_call_context_and_routes_tools_to_the_attempt(
     assert captured["args"] == (websocket, STREAM_SID, CALL_SID)
     assert captured["settings"] is settings
     assert mode.voice == "custom_voice"
+    assert mode.end_call is True
+    assert mode.end_call_when == (
+        "after the required outcome has been recorded, when identity verification cannot "
+        "continue, or when a required tool fails; finish with a brief truthful goodbye"
+    )
+    assert "Example Service Center" in mode.greeting
+    assert "Example Service Center" in mode.instructions
     assert attempt.recipient_name in mode.greeting
     assert attempt.appointment_summary not in mode.greeting
     assert attempt.appointment_summary not in mode.instructions
