@@ -1,11 +1,10 @@
 # Dialt recipes
 
-Runnable patterns built entirely from the public
-[`dialt-sdk`](https://pypi.org/project/dialt-sdk/) and
-[`@dialt/sdk`](https://www.npmjs.com/package/@dialt/sdk) surfaces.
+Build voice assistants with the public [`dialt-sdk`](https://pypi.org/project/dialt-sdk/) and [`@dialt/sdk`](https://www.npmjs.com/package/@dialt/sdk). These runnable examples show how to connect tools, hand off between assistants, conduct research interviews and evaluate conversations.
 
-The boundary is deliberate: Dialt owns conversation; recipes own application policy and
-orchestration. There is no parallel simulator client and no eval-only conversation engine. A
+Dialt is a conversational voice engine. You can tune how your voice assistants sound, speak and act. Model training on your data is currently arranged with the [Dialt team](mailto:hello@dialt.com?subject=Training%20with%20Dialt). These recipes cover integration and application workflows.
+
+Dialt owns conversation. Recipes own application policy and orchestration. There is no parallel simulator client and no eval-only conversation engine. A
 simulated user is another Dialt session. Text and voice select different I/O on the same
 session primitive.
 
