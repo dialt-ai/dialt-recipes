@@ -1,0 +1,15 @@
+{
+  "name": "dialt-language-handoff",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@dialt/sdk": "0.56.0"
+  }
+}
