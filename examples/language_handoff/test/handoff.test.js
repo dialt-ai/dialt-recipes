@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agents, transferLanguage } from '../public/agents.js';
+import { agentConfig, agents, transferLanguage } from '../public/agents.js';
 import * as demo from '../public/agents.js';
 
 const call = (language) => ({ id: 'call-1', name: 'transfer_language', args: { language } });
+
+test('voice selection does not invent named assistant identities or require introductions', () => {
+  for (const language of Object.keys(agents)) {
+    assert.equal(Object.hasOwn(agents[language], 'name'), false);
+    assert.match(agentConfig(language).instructions, /AI assistant/);
+    assert.doesNotMatch(agentConfig(language).instructions, /Alex|Sofía|Clara|introduce yourself/);
+  }
+});
 
 test('transfers all three languages atomically and waits for broker acceptance', async () => {
   for (const language of Object.keys(agents)) {

@@ -64,7 +64,7 @@ and a Twilio wiring sketch.
 [`examples/language_handoff`](examples/language_handoff) is a minimal voice demo with English,
 Spanish and Portuguese assistants. Multilingual listening stays enabled; one `transfer_language`
 tool switches instructions and voice on the same session. A plain schematic beside the call
-highlights the active assistant. A local Node server exchanges the account key for scoped
+highlights the active voice, using Dialt's catalogue labels. A local Node server exchanges the account key for scoped
 browser credentials; no build step is needed.
 
 ```sh

@@ -2,16 +2,20 @@
 
 A minimal browser voice assistant with one `transfer_language` tool and three voices:
 
-| Language | Assistant | Voice |
+| Language | Voice label | Voice ID |
 | --- | --- | --- |
-| English | Alex | `us_male` |
-| Spanish | Sofía | `mexican_female` |
-| Portuguese | Clara | `brazilian_female` |
+| English | US Male | `us_male` |
+| Spanish | Mexican Spanish Female | `mexican_female` |
+| Portuguese | Brazilian Portuguese Female | `brazilian_female` |
 
 The assistant transfers when the caller speaks another supported language or asks to switch.
 Quoted phrases and translation requests stay with the current assistant. Unsupported languages
 do not transfer. Each incoming assistant can transfer back. The conversation stays on one
-session, retaining its history. The schematic highlights the active assistant as the call changes.
+session, retaining its history. The schematic highlights the active voice as the call changes.
+
+Voice labels follow Dialt's catalogue. A voice selects sound and voice guidance; developer
+instructions define the application role. This recipe uses an AI assistant role without
+invented personal names or an instruction to introduce a new character after a handoff.
 
 You can also enable `multilingual: true` on a single assistant and keep one voice for every
 language, with no transfer tool. The selected voice retains its accent throughout the call.
@@ -59,10 +63,10 @@ npm test
 ```
 
 Offline tests cover multilingual start frames through the pinned SDK, all three handoffs,
-rejections, timeouts, unsupported/same-language tool calls, and credential isolation.
+rejections, timeouts, unsupported/same-language tool calls, unnamed assistant instructions, and credential isolation.
 
 For a live check, ask a simple question in English, then say “¿Puedes hablar español?”,
 “Podemos falar português?” and “Can we speak English again?”. Check that each voice changes,
-the matching assistant is highlighted, and it remembers the original question. Try a translation
-request and an unsupported language to check that neither triggers a handoff. End the call
+the matching voice is highlighted, and it remembers the original question without introducing a
+named character. Try a translation request and an unsupported language to check that neither triggers a handoff. End the call
 with **End conversation**.

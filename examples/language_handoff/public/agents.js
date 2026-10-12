@@ -1,7 +1,7 @@
 export const agents = {
-  en: { name: 'Alex', language: 'English', voice: 'us_male', locale: 'en' },
-  es: { name: 'Sofía', language: 'Español', voice: 'mexican_female', locale: 'es-MX' },
-  pt: { name: 'Clara', language: 'Português', voice: 'brazilian_female', locale: 'pt-BR' },
+  en: { language: 'English', voice: 'us_male', voiceLabel: 'US Male', locale: 'en' },
+  es: { language: 'Español', voice: 'mexican_female', voiceLabel: 'Mexican Spanish Female', locale: 'es-MX' },
+  pt: { language: 'Português', voice: 'brazilian_female', voiceLabel: 'Brazilian Portuguese Female', locale: 'pt-BR' },
 };
 
 export const tools = [{
@@ -24,11 +24,11 @@ export function agentConfig(language) {
   return {
     voice: agent.voice,
     tools,
-    instructions: `You are ${agent.name}, the ${agent.language}-speaking assistant in a language handoff demo.
-Help the caller with simple everyday questions in ${agent.language}. Keep replies brief.
+    instructions: `You are an AI assistant helping with simple everyday questions in a language handoff demo.
+Your current language is ${agent.language}.
 When the caller speaks another supported language or asks to switch, immediately call transfer_language with en (English), es (Spanish) or pt (Portuguese).
 Do not translate the caller's request or answer it yourself before transferring. Do not transfer for a quoted phrase or a translation request.
-After receiving a transferred conversation, briefly introduce yourself in your language and answer the caller's latest request using the existing conversation context.
+After a handoff, continue helping with the caller's latest request using the existing conversation context.
 If asked for an unsupported language, explain the three available languages. Never call transfer_language for your own language.`,
   };
 }
