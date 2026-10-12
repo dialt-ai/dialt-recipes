@@ -8,9 +8,9 @@ h2 { font-size: 18px; margin: 18px 0; }
 aside { border-left: 1px solid var(--rule); padding-left: 32px; }
 .schematic { text-align: center; }
 .step { border: 1px solid var(--rule); padding: 14px 10px; }
-.step strong, .step code, .step span, .voice strong, .voice span, .voice small { display: block; }
+.step strong, .step code, .step span, .voice strong, .voice span { display: block; }
 .step code { margin: 4px 0; font-size: 13px; }
-.step span, .voice small, .diagram-note { font-size: 12px; }
+.step span, .diagram-note { font-size: 12px; }
 .arrow { font-size: 24px; line-height: 1.5; }
 .voices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .voice { border: 1px solid var(--rule); padding: 10px 4px; }

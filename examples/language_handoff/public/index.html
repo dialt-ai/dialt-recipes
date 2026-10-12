@@ -12,7 +12,7 @@
     <section aria-labelledby="demo-title">
       <h1 id="demo-title">Dialt language handoff</h1>
       <p>Speak English, Spanish or Portuguese. The assistant switches to a different voice for each language.</p>
-      <p>Agent: <strong id="agent-name">Alex</strong> — <span id="agent-language">English · US male voice</span></p>
+      <p>Voice: <strong id="voice-name">US Male</strong> · <span id="agent-language">English</span></p>
       <p>Status: <span id="status" role="status">Not connected</span></p>
       <button id="call-button" type="button"><span id="button-label">Start conversation</span></button>
       <p>Allow your microphone, then speak. Headphones help prevent echo.</p>
@@ -36,16 +36,16 @@
         <div class="arrow" aria-hidden="true">↓</div>
         <div class="voices" aria-label="Assistant voices">
           <div class="voice" data-agent="en" aria-current="true">
-            <strong>Alex</strong><span>English</span><small>US male</small>
+            <strong>US Male</strong><span>English</span>
           </div>
           <div class="voice" data-agent="es" lang="es">
-            <strong>Sofía</strong><span>Español</span><small>Mexican female</small>
+            <strong>Mexican Spanish Female</strong><span>Español</span>
           </div>
           <div class="voice" data-agent="pt" lang="pt">
-            <strong>Clara</strong><span>Português</span><small>Brazilian female</small>
+            <strong>Brazilian Portuguese Female</strong><span>Português</span>
           </div>
         </div>
-        <p class="diagram-note">Highlighted = current assistant<br>Same session. Conversation history stays.</p>
+        <p class="diagram-note">Highlighted = current voice<br>Same session. Conversation history stays.</p>
         <p class="diagram-note">You can also use one multilingual assistant without this tool.<br>Its voice keeps the same accent across languages.</p>
       </div>
     </aside>

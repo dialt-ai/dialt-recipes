@@ -11,8 +11,8 @@ function status(text) { $('status').textContent = text; }
 function showAgent(nextLanguage) {
   language = nextLanguage;
   const agent = agents[language];
-  $('agent-name').textContent = agent.name;
-  $('agent-language').textContent = `${agent.language} · ${language === 'en' ? 'US male' : language === 'es' ? 'Mexican female' : 'Brazilian female'} voice`;
+  $('voice-name').textContent = agent.voiceLabel;
+  $('agent-language').textContent = agent.language;
   for (const node of document.querySelectorAll('[data-agent]')) {
     node.setAttribute('aria-current', String(node.dataset.agent === language));
   }
@@ -73,7 +73,7 @@ $('call-button').addEventListener('click', async () => {
       if (detail.corrected && lastAssistantLine) {
         lastAssistantLine.querySelector('span').textContent = detail.text;
       } else {
-        lastAssistantLine = append(agents[language].name, detail.text, agents[language].locale);
+        lastAssistantLine = append('Assistant', detail.text, agents[language].locale);
       }
     });
     session.addEventListener('tool_call', async ({ detail }) => {
@@ -83,7 +83,7 @@ $('call-button').addEventListener('click', async () => {
       try {
         const next = await transferLanguage(session, detail, language);
         if (client !== session) return;
-        if (next !== previousLanguage) append('Handoff', `${agents[previousLanguage].name} → ${agents[next].name} · ${agents[next].language}`);
+        if (next !== previousLanguage) append('Handoff', `${agents[previousLanguage].voiceLabel} → ${agents[next].voiceLabel}`);
         showAgent(next);
         status('Listening');
       } catch (error) {
