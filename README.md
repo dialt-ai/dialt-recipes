@@ -28,7 +28,8 @@ uv sync --frozen
 cp .env.example .env
 ```
 
-Python recipes require `dialt-sdk>=0.43.0`; the browser example uses `@dialt/sdk@0.53.0`.
+Python recipes require `dialt-sdk>=0.44.0`; guided customer research uses `@dialt/sdk@0.53.0`
+and language handoff pins `@dialt/sdk@0.56.0`.
 These releases include breaking alpha cleanup; see the [migration guide](https://dialt.com/docs/api/migration/)
 when updating an existing integration. The lockfiles pin the versions tested here.
 They use the versioned API at `api.dialt.com`, including `/v1/evals` for local result reporting.
@@ -57,6 +58,24 @@ recording the result, preventing an old-prompt answer, and applying the speciali
 tools, voice, context and first-reply tool choice. A clinic appointment line is the worked
 example, with eval cases rendered from the workflow, a local host that confirms the continuation,
 and a Twilio wiring sketch.
+
+## Language handoff in the browser
+
+[`examples/language_handoff`](examples/language_handoff) is a minimal voice demo with English,
+Spanish and Portuguese assistants. Multilingual listening stays enabled; one `transfer_language`
+tool switches instructions and voice on the same session. A plain schematic beside the call
+highlights the active assistant. A local Node server exchanges the account key for scoped
+browser credentials; no build step is needed.
+
+```sh
+cd examples/language_handoff
+npm ci
+cp .env.example .env
+# Set DIALT_API_KEY in .env.
+npm start
+```
+
+Open http://localhost:3000. This example requires Node 22.18+; `npm test` runs its offline checks.
 
 ## Policy agent beside the call
 

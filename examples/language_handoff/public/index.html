@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dialt language handoff</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <section aria-labelledby="demo-title">
+      <h1 id="demo-title">Dialt language handoff</h1>
+      <p>Speak English, Spanish or Portuguese. The assistant switches to a different voice for each language.</p>
+      <p>Agent: <strong id="agent-name">Alex</strong> — <span id="agent-language">English · US male voice</span></p>
+      <p>Status: <span id="status" role="status">Not connected</span></p>
+      <button id="call-button" type="button"><span id="button-label">Start conversation</span></button>
+      <p>Allow your microphone, then speak. Headphones help prevent echo.</p>
+      <p id="error" role="alert" hidden></p>
+      <div id="transcript" role="log" aria-label="Conversation transcript" hidden></div>
+    </section>
+    <aside aria-labelledby="setup-title">
+      <h2 id="setup-title">How it works</h2>
+      <div class="schematic">
+        <div class="step">
+          <strong>One Dialt session</strong>
+          <code>multilingual: true</code>
+          <span>Understands all three languages</span>
+        </div>
+        <div class="arrow" aria-hidden="true">↓</div>
+        <div class="step">
+          <strong>One tool</strong>
+          <code>transfer_language(language)</code>
+          <span>Selects the next instructions + voice</span>
+        </div>
+        <div class="arrow" aria-hidden="true">↓</div>
+        <div class="voices" aria-label="Assistant voices">
+          <div class="voice" data-agent="en" aria-current="true">
+            <strong>Alex</strong><span>English</span><small>US male</small>
+          </div>
+          <div class="voice" data-agent="es" lang="es">
+            <strong>Sofía</strong><span>Español</span><small>Mexican female</small>
+          </div>
+          <div class="voice" data-agent="pt" lang="pt">
+            <strong>Clara</strong><span>Português</span><small>Brazilian female</small>
+          </div>
+        </div>
+        <p class="diagram-note">Highlighted = current assistant<br>Same session. Conversation history stays.</p>
+        <p class="diagram-note">You can also use one multilingual assistant without this tool.<br>Its voice keeps the same accent across languages.</p>
+      </div>
+    </aside>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

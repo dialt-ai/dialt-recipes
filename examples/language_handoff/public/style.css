@@ -1,0 +1,29 @@
+/* Plain UI using Dialt's font, ink and action color. */
+@font-face { font-family: Manrope; src: url('/Manrope.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
+:root { color-scheme: light; --ink: #11110f; --orange: #f7931a; --rule: rgba(17,17,15,.16); }
+body { margin: 24px; color: var(--ink); background: white; font: 15px/1.5 Manrope, system-ui, sans-serif; }
+main { max-width: 1100px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 64px; }
+h1 { font-size: 22px; font-weight: 700; }
+h2 { font-size: 18px; margin: 18px 0; }
+aside { border-left: 1px solid var(--rule); padding-left: 32px; }
+.schematic { text-align: center; }
+.step { border: 1px solid var(--rule); padding: 14px 10px; }
+.step strong, .step code, .step span, .voice strong, .voice span, .voice small { display: block; }
+.step code { margin: 4px 0; font-size: 13px; }
+.step span, .voice small, .diagram-note { font-size: 12px; }
+.arrow { font-size: 24px; line-height: 1.5; }
+.voices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.voice { border: 1px solid var(--rule); padding: 10px 4px; }
+.voice[aria-current="true"] { border-color: var(--ink); background: #fff3e0; box-shadow: inset 0 3px var(--orange); }
+.voice span { font-size: 13px; }
+.diagram-note { margin: 12px 0 0; }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; gap: 24px; }
+  aside { border-left: 0; border-top: 1px solid var(--rule); padding: 0; }
+}
+button { font: inherit; padding: 7px 12px; border: 1px solid var(--rule); border-radius: 7px; background: var(--orange); color: var(--ink); cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+:focus-visible { outline: 2px solid #0d579b; outline-offset: 3px; }
+#error { color: #a32620; }
+#transcript { margin-top: 24px; border-top: 1px solid var(--rule); overflow-wrap: anywhere; }
+[hidden] { display: none !important; }

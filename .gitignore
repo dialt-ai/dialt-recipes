@@ -4,4 +4,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 dist/
+node_modules/
+tmp/
 .amp/portals/*
