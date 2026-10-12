@@ -19,9 +19,12 @@ export function createApp({ apiKey = process.env.DIALT_API_KEY, fetchImpl = fetc
     try {
       const { pathname } = new URL(req.url, 'http://localhost');
       if (pathname === '/session' && req.method === 'POST') {
-        // Disallow cross-site requests to the local credential endpoint.
-        if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) {
-          return json(403, { error: 'Cross-origin request refused.' });
+        // Reject cross-site requests and DNS rebinding to the local credential endpoint.
+        const origin = `http://${req.headers.host}`;
+        const hostname = new URL(origin).hostname;
+        if (!['localhost', '127.0.0.1'].includes(hostname) ||
+            (req.headers.origin && req.headers.origin !== origin)) {
+          return json(403, { error: 'Only local same-origin requests are allowed.' });
         }
         if (!apiKey) return json(503, { error: 'Set DIALT_API_KEY in .env.' });
         const upstream = await fetchImpl('https://api.dialt.com/v1/session-keys', {

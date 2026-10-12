@@ -45,3 +45,11 @@ test('credential failures return a useful error without relaying upstream secret
   assert.equal(response.status, 502);
   assert.deepEqual(JSON.parse(response.body), { error: 'Dialt credential request failed (401).' });
 });
+
+test('refuses credential requests through a non-loopback hostname', async () => {
+  const options = { apiKey: 'test-private-key', fetchImpl: () => { throw new Error('must not call'); } };
+  const response = await request(options, '/session', 'POST', {
+    host: 'attacker.example:3000', origin: 'http://attacker.example:3000',
+  });
+  assert.equal(response.status, 403);
+});
