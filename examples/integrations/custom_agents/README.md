@@ -50,9 +50,17 @@ join before explicit dispatch and introduce an unintended second agent.
 
 The agent must publish the standard Agents SDK `lk.agent.state` attribute. RTC contains
 continuous silence and Opus comfort noise; the bridge forwards audio only during `speaking`
-and a 200 ms packet tail. The bridge does not infer a barge-in event from a normal speech
-ending. LiveKit handles its own interruption; this minimal RTC bridge has no explicit
-`interrupt` event, so it is not suitable for measuring exact remote playback cancellation.
+and a 200 ms packet tail. On agent disconnect it allows up to one second for queued final
+packets to drain. Room, source, dispatch and API cleanup are independently attempted.
+
+For explicit playback cancellation, copy the small `speech_created` hook from
+`demo_livekit.py` into your agent: when a completed `SpeechHandle` has `interrupted=True`,
+publish the exact bytes `b'{"type":"interrupt"}'` as reliable room data on `dialt.control`.
+The bridge accepts this only from agent participants, emits the generic `interrupt`, and
+suppresses the interrupted RTC tail until the next `speaking` state. Normal speech completion
+never emits an interrupt. Without this hook your agent's native interruption still works,
+but the bridge cannot reliably clear already-buffered Dialt playback; that configuration
+does not support precise remote interruption tests.
 Use matching case opening behavior: the bridge does not override an existing agent's greeting.
 
 For a real, small agent using Cartesia STT/TTS and Together's Llama model:
@@ -73,15 +81,18 @@ first and answers opening-hours questions with nine to five Monday through Frida
 Set `ELEVENLABS_API_KEY` and `ELEVENLABS_AGENT_ID` for an existing agent. Configure that
 agent's **input and output as PCM16, mono, 16 kHz**. The public `AsyncConversation` /
 `AsyncAudioInterface` SDK supplies audio and interruption callbacks. The adapter waits for
-`begin` before initiating the provider session, then batches caller input into the SDK's
-recommended 250 ms chunks. It does not override the prompt, voice, first message or tools.
+`begin`, reads the agent configuration and returns an explicit error if either audio format
+is incompatible, then initiates the provider session and batches caller input into the SDK's
+recommended 250 ms chunks. Feeder failure cancels the provider session promptly. It does not
+override the prompt, voice, first message or tools.
 
 Use server tools/webhooks configured in ElevenLabs. If your agent uses client tools, pass
 your application's existing `ClientTools` implementation to `AsyncConversation` in
 `elevenlabs_adapter.py`; tools cannot be recovered from an agent ID alone. Match your case's
 opening behavior to the configured first message. A key with TTS permissions alone may
 return `401 missing_permissions` for Agents APIs; that is not proof the key is invalid.
-Both an accessible agent ID and permission to start its conversation are required.
+An accessible agent ID and permissions to read its configuration and start its conversation
+are required.
 
 ### Pipecat
 
@@ -114,21 +125,27 @@ uv run python conformance.py wss://your-adapter.example/ \
 # For an agent configured to wait for the caller:
 uv run python conformance.py wss://your-adapter.example/ \
   --opening caller --input-wav question-16k-mono.wav
+# Interrupt an agent greeting with caller speech:
+uv run python conformance.py wss://your-adapter.example/ \
+  --input-wav question-16k-mono.wav --input-delay 1 --output-wav interrupted.wav
 ```
 
 The token comes from `ADAPTER_TOKEN`, never a command-line argument. The command exits
 nonzero on failed authentication enforcement, invalid handshake, pre-begin output, invalid
-PCM, provider error, output after end, missing audio, a greeting later than eight seconds,
+PCM, provider error, output after end, missing or all-zero audio, a greeting later than eight seconds,
 or failure to close after stop. JSON output reports time from `begin` to first audio,
-audio byte count and observed interruptions. `ended:false` is normal when the caller stops
-an otherwise ongoing agent. The optional WAV concatenates received speech, not a wall-clock
-recording. This is a wire/audio smoke check, **not proof of answer quality or tool behavior**;
+audio byte count, observed interruptions and `discarded_ms`. It models paced 20 ms playback,
+clears the actual pending queue on `interrupt`, acknowledges its discarded duration, and
+drains final queued audio after `end` before `stop`. The queue is bounded to 30 seconds.
+`ended:false` is normal when the caller stops an otherwise ongoing agent. The optional WAV
+contains played audio after interruption discards, with idle gaps omitted. This is a
+wire/audio smoke check, **not proof of answer quality or tool behavior**;
 listen to the output and run hosted evals as well. It does not exercise optional evidence.
 
 Offline tests use real loopback WebSockets and no credentials:
 
 ```sh
-uv run --extra pipecat pytest -q
+uv run --extra livekit --extra elevenlabs --extra pipecat pytest -q
 ```
 
 ## Dialt run and eval case
@@ -176,7 +193,7 @@ upgrade includes `Authorization: Bearer <adapter token>`.
 4. Adapter `interrupt` clears pending playback. Dialt acknowledges with
    `playback_stopped` and `discarded_ms`. Pipecat/ElevenLabs have already cancelled local
    output through their native interruption handling; the acknowledgement needs no further
-   action. LiveKit's minimal RTC limitation is described above.
+   action. LiveKit uses the explicit agent hook described above, not a state-change guess.
 5. Adapter `end` follows final audio. Keep the socket open for playback drain until Dialt
    sends `stop`. `error` carries a sanitized `message`. Stop/disconnect tears down provider
    resources; a provider exception is not reported as successful end.

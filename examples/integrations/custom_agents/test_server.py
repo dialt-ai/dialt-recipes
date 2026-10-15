@@ -123,6 +123,33 @@ async def test_conformance_cli_contract():
     assert result["ended"]
 
 
+async def test_conformance_rejects_silence_and_discards_pending_audio(tmp_path):
+    import wave
+    from conformance import check
+
+    async def silence(start, incoming, send):
+        await send(bytes(640))
+
+    async with endpoint(silence) as url:
+        with pytest.raises(ValueError, match="non-silent"):
+            await check(url, TOKEN, duration=1)
+
+    async def interrupted(start, incoming, send):
+        await send(b"\x01\x02" * 16000)
+        await send({"type": "interrupt"})
+        await send(b"\x03\x04" * 320)
+
+    output = tmp_path / "played.wav"
+    async with endpoint(interrupted) as url:
+        result = await check(url, TOKEN, duration=1, output=output)
+    assert result["interrupts"] == 1
+    assert result["discarded_ms"] >= 900
+    with wave.open(str(output), "rb") as wav:
+        played = wav.readframes(wav.getnframes())
+    assert played.endswith(b"\x03\x04" * 320)
+    assert len(played) < 3200  # Queued interrupted speech was not played later.
+
+
 async def test_pipecat_real_pipeline_audio_and_cleanup(monkeypatch):
     import sys
     import types

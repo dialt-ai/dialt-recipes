@@ -34,7 +34,7 @@ async def session(ws, run_agent):
                 for offset in range(0, len(value), 32000):
                     await ws.send(value[offset:offset + 32000])
             else:
-                if value["type"] == "end":
+                if value["type"] in ("end", "error"):
                     ended = True
                 await ws.send(json.dumps(value))
 

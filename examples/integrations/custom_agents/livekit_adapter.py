@@ -14,6 +14,7 @@ async def run(start, incoming, send):
     room = rtc.Room()
     source = rtc.AudioSource(16000, 1, queue_size_ms=100)
     readers = set()
+    interrupted = set()
     dispatch = None
     failure = asyncio.get_running_loop().create_future()
 
@@ -27,7 +28,7 @@ async def run(start, incoming, send):
                 # the speech boundary; retain a short tail for in-flight packets.
                 if participant.attributes.get("lk.agent.state") == "speaking":
                     last_speaking = time.monotonic()
-                if time.monotonic() - last_speaking < 0.2:
+                if participant.identity not in interrupted and time.monotonic() - last_speaking < 0.2:
                     await send(pcm)
         finally:
             await stream.aclose()
@@ -36,6 +37,22 @@ async def run(start, incoming, send):
         readers.discard(task)
         if not task.cancelled() and task.exception() and not failure.done():
             failure.set_exception(task.exception())
+
+    @room.on("participant_attributes_changed")
+    def attributes_changed(changed, participant):
+        if changed.get("lk.agent.state") == "speaking":
+            interrupted.discard(participant.identity)
+
+    @room.on("data_received")
+    def control(packet):
+        participant = packet.participant
+        if (packet.topic == "dialt.control" and participant is not None
+                and participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
+                and packet.data == b'{"type":"interrupt"}'):
+            interrupted.add(participant.identity)
+            task = asyncio.create_task(send({"type": "interrupt"}))
+            readers.add(task)
+            task.add_done_callback(completed)
 
     @room.on("track_subscribed")
     def subscribed(track, publication, participant):
@@ -70,16 +87,27 @@ async def run(start, incoming, send):
         done, _ = await asyncio.wait([feeder, failure], return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             await task
+        # Disconnect can precede the last already-queued RTC packets. Give the
+        # finite streams a bounded drain before the server emits end.
+        if readers:
+            try:
+                await asyncio.wait_for(asyncio.gather(*readers), timeout=1)
+            except TimeoutError:
+                pass
     finally:
         tasks = list(readers) + ([feeder] if feeder else [])
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await room.disconnect()
-        await source.aclose()
-        try:
-            if dispatch:
-                await client.agent_dispatch.delete_dispatch(dispatch.id, room_name)
-            await client.room.delete_room(api.DeleteRoomRequest(room=room_name))
-        finally:
-            await client.aclose()
+        cleanup = [room.disconnect(), source.aclose()]
+        if dispatch:
+            cleanup.append(client.agent_dispatch.delete_dispatch(dispatch.id, room_name))
+        cleanup.extend([client.room.delete_room(api.DeleteRoomRequest(room=room_name)), client.aclose()])
+        errors = []
+        for operation in cleanup:
+            try:
+                await operation
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[0]

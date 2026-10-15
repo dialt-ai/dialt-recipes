@@ -8,6 +8,14 @@ from elevenlabs.conversational_ai.conversation import AsyncAudioInterface, Async
 
 
 async def run(start, incoming, send):
+    client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
+    agent_id = os.environ["ELEVENLABS_AGENT_ID"]
+    agent = await asyncio.to_thread(client.conversational_ai.agents.get, agent_id=agent_id)
+    config = agent.conversation_config
+    if (config.asr.user_input_audio_format != "pcm_16000"
+            or config.tts.agent_output_audio_format != "pcm_16000"):
+        await send({"type": "error", "message": "ElevenLabs input and output must use pcm_16000"})
+        return
     ready = asyncio.Event()
 
     class Audio(AsyncAudioInterface):
@@ -28,10 +36,9 @@ async def run(start, incoming, send):
 
     audio = Audio()
     conversation = AsyncConversation(
-        ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"]),
-        os.environ["ELEVENLABS_AGENT_ID"], requires_auth=True, audio_interface=audio,
+        client, agent_id, requires_auth=True, audio_interface=audio,
     )
-    feeder = None
+    tasks = []
     try:
         await conversation.start_session()
 
@@ -47,10 +54,13 @@ async def run(start, incoming, send):
                     await audio.callback(bytes(pending[:8000]))
                     del pending[:8000]
 
-        feeder = asyncio.create_task(feed())
-        await conversation.wait_for_session_end()
+        tasks = [asyncio.create_task(feed()),
+                 asyncio.create_task(conversation.wait_for_session_end())]
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            await task
     finally:
-        if feeder:
-            feeder.cancel()
-            await asyncio.gather(feeder, return_exceptions=True)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         await conversation.end_session()
