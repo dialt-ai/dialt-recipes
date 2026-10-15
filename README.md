@@ -21,6 +21,12 @@ uv sync --frozen
 uv run pytest -q
 ```
 
+[`examples/integrations/custom_agents`](examples/integrations/custom_agents) connects an
+existing LiveKit, ElevenLabs Agents, or Pipecat voice agent to a Dialt simulated caller over
+one authenticated WebSocket contract. It includes real LiveKit/Pipecat demo agents, an
+endpoint conformance CLI, an eval case, and offline tests. Agent prompts and tools stay in
+their original application.
+
 ## Install
 
 ```sh

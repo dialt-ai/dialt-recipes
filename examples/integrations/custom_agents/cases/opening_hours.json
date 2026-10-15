@@ -1,0 +1,14 @@
+{
+  "name": "custom agent answers opening hours",
+  "target": {
+    "instructions": "You are a helpful voice assistant. Give concise answers in one sentence. If asked for opening hours, say nine to five Monday to Friday.",
+    "greeting": "Hello, how can I help?"
+  },
+  "simulator": {
+    "instructions": "You are a caller asking a business about its opening hours. After its greeting, ask what its opening hours are. When it answers, thank it, say goodbye and end the call. Do not speak for the business or invent the answer."
+  },
+  "checks": [
+    {"type": "judge", "criterion": "The assistant told the caller the opening hours are nine to five Monday through Friday."}
+  ],
+  "limits": {"max_turns": 5, "timeout_s": 60, "silence_s": 15}
+}

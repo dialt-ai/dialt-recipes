@@ -1,0 +1,17 @@
+[project]
+name = "dialt-custom-agent-examples"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["websockets>=15,<16", "python-dotenv>=1"]
+
+[project.optional-dependencies]
+livekit = ["livekit>=1,<2", "livekit-api>=1,<2"]
+elevenlabs = ["elevenlabs>=2,<3"]
+pipecat = ["pipecat-ai>=1.12,<2"]
+demo = ["livekit-agents[cartesia,openai,silero]>=1.8,<2", "pipecat-ai[cartesia,silero]>=1.12,<2"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=1"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
