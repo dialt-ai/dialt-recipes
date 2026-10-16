@@ -21,6 +21,8 @@ uv sync --frozen
 uv run pytest -q
 ```
 
+[`examples/integrations/telnyx`](examples/integrations/telnyx) connects inbound Telnyx Call Control calls to Dialt using signed webhooks and bidirectional PCMU media streaming. Its standalone uv project includes number-routing setup, offline tests and explicit call hangup after playback drains.
+
 [`examples/integrations/custom_agents`](examples/integrations/custom_agents) connects an
 existing LiveKit, ElevenLabs Agents, or Pipecat voice agent to a Dialt simulated caller over
 one authenticated WebSocket contract. It includes real LiveKit/Pipecat demo agents, an

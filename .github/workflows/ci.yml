@@ -36,5 +36,7 @@ jobs:
       - run: uv run pytest
       - run: uv sync --project examples/integrations/twilio --frozen
       - run: uv run --project examples/integrations/twilio pytest examples/integrations/twilio -q
+      - run: uv sync --project examples/integrations/telnyx --frozen
+      - run: uv run --project examples/integrations/telnyx pytest examples/integrations/telnyx -q
       - run: uv sync --project examples/integrations/custom_agents --frozen --extra livekit --extra elevenlabs --extra pipecat
       - run: uv run --project examples/integrations/custom_agents --extra livekit --extra elevenlabs --extra pipecat pytest examples/integrations/custom_agents -q

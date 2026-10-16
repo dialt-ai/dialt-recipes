@@ -1,0 +1,16 @@
+**
+!pyproject.toml
+!README.md
+!src/
+!src/**
+!examples/
+!examples/integrations/
+!examples/integrations/telnyx/
+!examples/integrations/telnyx/bridge.py
+!examples/integrations/telnyx/instructions.md
+!examples/integrations/telnyx/pyproject.toml
+!examples/integrations/telnyx/uv.lock
+!examples/integrations/telnyx/Dockerfile
+!examples/integrations/telnyx/Dockerfile.dockerignore
+**/__pycache__
+**/*.pyc

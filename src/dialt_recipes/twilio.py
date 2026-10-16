@@ -22,7 +22,7 @@ import json
 import logging
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 from dialt import DEFAULT_REALTIME_URL, DialtError, DialtMode, DialtSession, float32_to_pcm16
 from twilio.request_validator import RequestValidator
@@ -188,8 +188,18 @@ class BridgeHooks:
     continue_after_tool: ToolContinuationHook | None = None
 
 
+class DialtConnectionSettings(Protocol):
+    """Connection configuration shared by phone-provider hosts."""
+
+    @property
+    def dialt_api_key(self) -> str: ...
+
+    @property
+    def dialt_url(self) -> str: ...
+
+
 async def run_call_bridge(websocket: Any, stream_sid: str, call_sid: str, *,
-                          settings: TwilioBridgeSettings, mode: DialtMode,
+                          settings: DialtConnectionSettings, mode: DialtMode,
                           hooks: BridgeHooks) -> None:
     """Bridge one Twilio media stream to one Dialt session until either side ends."""
     ledger = PlaybackLedger()

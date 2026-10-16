@@ -1,0 +1,16 @@
+[project]
+name = "dialt-telnyx-example"
+version = "0.1.0"
+description = "Inbound Telnyx Call Control reference bridge for Dialt."
+requires-python = ">=3.11"
+dependencies = [
+    "dialt-recipes @ git+https://github.com/dialt-ai/dialt-recipes.git",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28", "pytest>=8.3"]
+
+[tool.uv.sources]
+dialt-recipes = { path = "../../..", editable = true }
