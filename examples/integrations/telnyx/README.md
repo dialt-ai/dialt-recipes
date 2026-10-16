@@ -40,6 +40,8 @@ The bridge requests and validates mono PCMU at 8 kHz. It decodes and resamples i
 
 The session enables Dialt's managed `end_call` tool so the assistant can end the call when asked. After playback drains, the host explicitly hangs up via Call Control. Closing the media socket alone would leave the phone call alive. Transport failures also attempt hangup. The caller may already have hung up; Telnyx error 90018 and an already-disconnected media socket are accepted in that case.
 
+Known limitation: a spoken farewell does not confirm that Dialt ended the session. In one live split-goodbye test, Dialt cancelled a pending ending and then spoke a farewell without sending the session-end signal, leaving the call open until the test harness closed it. Agent-ending reliability remains unqualified. The live test harness used a 55-second provider safety cap; this recipe does not configure a maximum call duration.
+
 ## Persistent deployment on Railway
 
 Build `examples/integrations/telnyx/Dockerfile` from the repository root. The image installs the frozen production dependencies, runs one Uvicorn worker as an unprivileged user and contains no credentials. The root `.railwayignore` limits CLI uploads to the Telnyx service and its package sources; the Dockerfile's own ignore file also excludes secrets, virtual environments and tests from the build context.
@@ -63,5 +65,7 @@ uv run pytest -q
 ```
 
 Offline tests need no credentials. A read-only balance request proves API authentication only. It does not qualify number routing, media delivery or caller-heard audio. Complete the real-call checks above before production use.
+
+Live qualification covered same-account Telnyx calls, two-way audio, interruption, successful agent and caller hangup, and cleanup after a failed media handshake. External-carrier origination and concurrent calls remain unqualified, alongside the agent-ending limitation above.
 
 Protocol references: [media streaming](https://developers.telnyx.com/docs/voice/programmable-voice/media-streaming), [answer call](https://developers.telnyx.com/api-reference/call-commands/answer-call), and [webhook verification](https://developers.telnyx.com/docs/development/api-fundamentals/webhooks/receiving-webhooks).
