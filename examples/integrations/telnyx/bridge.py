@@ -161,7 +161,8 @@ async def media(websocket: WebSocket) -> None:
         await run_call_bridge(
             TelnyxMediaSocket(websocket), stream_id, session_id, settings=settings,
             mode=DialtMode(instructions=settings.instructions, voice=settings.voice,
-                           greeting=settings.greeting, tools=tool_manifest() or None),
+                           greeting=settings.greeting, end_call=True,
+                           tools=tool_manifest() or None),
             hooks=BridgeHooks(execute_tool=run_tool),
         )
     except (WebSocketDisconnect, ConnectionError):
@@ -181,5 +182,5 @@ async def media(websocket: WebSocket) -> None:
                 logger.exception("Telnyx hangup failed")
         try:
             await websocket.close()
-        except RuntimeError:
+        except (RuntimeError, WebSocketDisconnect):
             pass

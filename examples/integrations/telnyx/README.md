@@ -38,7 +38,7 @@ The bridge requests and validates mono PCMU at 8 kHz. It decodes and resamples i
 
 `dialt_recipes.telnyx.TelnyxMediaSocket` adapts Telnyx's wire envelope to the existing engine in `dialt_recipes.twilio`. Pacing, 100 ms playback marks, clear handling, tool dispatch and bounded playback drain have one implementation. A successful send is not playback evidence: marks acknowledge playback, and a clear invalidates pending marks before the returned acknowledgements arrive. Telnyx documents that media can arrive out of order; this reference forwards arrival order and does not implement a jitter/reordering buffer.
 
-After playback drains, the host explicitly hangs up via Call Control. Closing the media socket alone would leave the phone call alive. Transport failures also attempt hangup. The caller may already have hung up; Telnyx error 90018 is accepted in that case.
+The session enables Dialt's managed `end_call` tool so the assistant can end the call when asked. After playback drains, the host explicitly hangs up via Call Control. Closing the media socket alone would leave the phone call alive. Transport failures also attempt hangup. The caller may already have hung up; Telnyx error 90018 and an already-disconnected media socket are accepted in that case.
 
 ## Persistent deployment on Railway
 
