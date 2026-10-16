@@ -37,9 +37,12 @@ def host(monkeypatch):
     monkeypatch.setattr(bridge, "get_settings", lambda: settings)
     requests = []
     response_status = [200]
+    responses = []
 
     def api(request):
         requests.append(request)
+        if responses:
+            return responses.pop(0)
         return httpx.Response(response_status[0], json={"data": {"result": "ok"}})
 
     client_class = httpx.AsyncClient
@@ -56,7 +59,7 @@ def host(monkeypatch):
 
     with TestClient(bridge.app) as client:
         yield SimpleNamespace(client=client, settings=settings, headers=headers,
-                              requests=requests, response_status=response_status)
+                              requests=requests, response_status=response_status, responses=responses)
 
 
 def test_webhook_authentication_answer_and_retry(host):
@@ -92,6 +95,25 @@ def test_non_incoming_events_do_not_answer(host):
     assert host.requests == []
 
 
+def test_failed_stream_hangs_up_without_websocket_and_retries_api_failure(host):
+    raw = json.dumps({"data": {"event_type": "streaming.failed", "payload": {
+        "call_control_id": "failed-stream-call",
+    }}}).encode()
+    assert host.client.post("/voice", content=raw).status_code == 403
+    assert host.requests == []
+    host.responses.extend([
+        httpx.Response(502, text="Bad Gateway"),
+        httpx.Response(200, json={"data": {"result": "ok"}}),
+        httpx.Response(422, json={"errors": [{"code": "90018"}]}),
+        httpx.Response(422, json={"errors": [{"code": "90015"}]}),
+    ])
+    for expected in (503, 200, 200, 503):
+        assert host.client.post("/voice", content=raw, headers=host.headers(raw)).status_code == expected
+    assert len(host.requests) == 4
+    assert all(r.url.path == "/v2/calls/failed-stream-call/actions/hangup" for r in host.requests)
+    assert len({json.loads(r.content)["command_id"] for r in host.requests}) == 1
+
+
 def test_websocket_authentication_binds_exact_url(host):
     for payload in (b"wss://evil.example.com/media", b"https://voice.example.com/media"):
         with pytest.raises(WebSocketDisconnect):
@@ -100,8 +122,14 @@ def test_websocket_authentication_binds_exact_url(host):
     assert host.requests == []
 
 
-@pytest.mark.parametrize("encoding,rate,channels", [("PCMA", 8000, 1), ("PCMU", 16000, 1), ("PCMU", 8000, 2)])
-def test_rejects_unsupported_media(host, encoding, rate, channels):
+@pytest.mark.parametrize("encoding,rate,channels,hangup_status", [
+    ("PCMA", 8000, 1, 200), ("PCMU", 16000, 1, 200), ("PCMU", 8000, 2, 200),
+    ("PCMA", 8000, 1, 502),
+])
+def test_rejects_unsupported_media(host, encoding, rate, channels, hangup_status):
+    # A provider's HTML/plain-text gateway error must not prevent socket cleanup.
+    if hangup_status == 502:
+        host.responses.append(httpx.Response(502, text="Bad Gateway"))
     with host.client.websocket_connect("/media", headers=host.headers(host.settings.stream_url.encode())) as ws:
         ws.send_json({"event": "start", "stream_id": "stream-1", "start": {
             "call_control_id": "call-1", "media_format": {

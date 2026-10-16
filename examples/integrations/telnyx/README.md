@@ -24,7 +24,7 @@ Get the account's base64 Ed25519 public key from Telnyx Mission Control's API Ke
 4. Deploy this server with HTTPS/WSS reachable by Telnyx.
 5. Call the number and check greeting, caller speech, reply audio, interruption, caller hangup and agent hangup. These calls incur normal Telnyx and Dialt usage charges.
 
-The webhook answers incoming `call.initiated` events and starts bidirectional streaming in the same command. A deterministic `command_id` makes webhook retries reuse the same answer command within Telnyx's deduplication window. API failures return 503 so Telnyx can retry. A production host needing durable processing should queue authenticated events and enforce event-ID deduplication across workers before returning 200. Telnyx's command deduplication is time-bounded.
+The webhook answers incoming `call.initiated` events and starts bidirectional streaming in the same command. If Telnyx reports `streaming.failed`, the webhook hangs up even when no media socket started. A deterministic `command_id` makes webhook retries reuse the same answer or hangup command within Telnyx's deduplication window. API failures return 503 so Telnyx can retry; a hangup on an already-ended call succeeds. A production host needing durable processing should queue authenticated events and enforce event-ID deduplication across workers before returning 200. Telnyx's command deduplication is time-bounded.
 
 ## Conversation and tools
 

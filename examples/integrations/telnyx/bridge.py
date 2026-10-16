@@ -82,6 +82,13 @@ async def call_command(settings: Settings, call_id: str, action: str, **params) 
             headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
             json={"command_id": command_id, **params},
         )
+        if action == "hangup" and response.status_code == 422:
+            try:
+                errors = response.json().get("errors", [])
+            except ValueError:
+                errors = []
+            if errors and all(str(error.get("code")) == "90018" for error in errors):
+                return  # The caller or another cleanup path already ended the call.
         response.raise_for_status()
 
 
@@ -120,20 +127,22 @@ async def voice(request: Request) -> Response:
         raise HTTPException(403, "invalid Telnyx signature")
     event = json.loads(raw)["data"]
     payload = event["payload"]
-    if event["event_type"] == "call.initiated" and payload.get("direction") == "incoming":
-        try:
+    try:
+        if event["event_type"] == "call.initiated" and payload.get("direction") == "incoming":
             await call_command(
                 settings, payload["call_control_id"], "answer", stream_url=settings.stream_url,
                 stream_track="inbound_track", stream_codec="PCMU",
                 stream_bidirectional_mode="rtp", stream_bidirectional_codec="PCMU",
                 stream_bidirectional_target_legs="self",
             )
-        except httpx.HTTPError:
-            # A non-2xx lets Telnyx retry rather than acknowledging a lost answer command.
-            logger.exception("Telnyx answer failed")
-            raise HTTPException(503, "Telnyx answer failed") from None
-    elif event["event_type"] == "streaming.failed":
-        logger.error("Telnyx streaming failed")
+        elif event["event_type"] == "streaming.failed":
+            # No WebSocket handler may have started, so its finally cannot clean up.
+            logger.error("Telnyx streaming failed")
+            await call_command(settings, payload["call_control_id"], "hangup")
+    except httpx.HTTPError:
+        # Let Telnyx retry an answer or hangup command that failed at the provider.
+        logger.exception("Telnyx call command failed")
+        raise HTTPException(503, "Telnyx call command failed") from None
     return Response(status_code=200)
 
 
@@ -171,16 +180,14 @@ async def media(websocket: WebSocket) -> None:
         logger.exception("Telnyx bridge failed")
     finally:
         # Closing a Call Control stream alone does not hang up the phone call.
-        if call_id:
-            try:
-                await call_command(settings, call_id, "hangup")
-            except httpx.HTTPStatusError as exc:
-                errors = exc.response.json().get("errors", [])
-                if not errors or any(str(error.get("code")) != "90018" for error in errors):
-                    logger.exception("Telnyx hangup failed")
-            except httpx.HTTPError:
-                logger.exception("Telnyx hangup failed")
         try:
-            await websocket.close()
-        except (RuntimeError, WebSocketDisconnect):
-            pass
+            if call_id:
+                try:
+                    await call_command(settings, call_id, "hangup")
+                except httpx.HTTPError:
+                    logger.exception("Telnyx hangup failed")
+        finally:
+            try:
+                await websocket.close()
+            except (RuntimeError, WebSocketDisconnect):
+                pass
