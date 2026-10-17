@@ -46,12 +46,17 @@ Known limitation: a spoken farewell does not confirm that Dialt ended the sessio
 
 Build `examples/integrations/telnyx/Dockerfile` from the repository root. The image installs the frozen production dependencies, runs one Uvicorn worker as an unprivileged user and contains no credentials. The root `.railwayignore` limits CLI uploads to the Telnyx service and its package sources; the Dockerfile's own ignore file also excludes secrets, virtual environments and tests from the build context.
 
+For Dialt-operated deployments, use the **`dialt-auxiliary`** Railway project: this bridge is an internal application, alongside apps such as Metabase and Atlantis, not a core Dialt service. **`dialt-services`** is reserved for core system services such as alignment workers. Keep the bridge independently deployed from this repository, outside the core repository's `deploy/railway/services.toml` and release workflow. Other operators should use their own project and credentials.
+
+When copying an existing deployment, create a separate service and domain in the auxiliary project. Leave the original service, variables and Telnyx application/number routing unchanged while validating the copy. Use a separate Telnyx test application and routing for live-call qualification; do not repoint the existing number merely to test the new service. A healthy copy is not a routing cutover, and retiring the original or switching its number requires a separate operator decision.
+
 Create one service in the intended Railway project/environment. Set the Dockerfile path above, one replica, a 0.5 vCPU / 0.25 GB memory limit, sleep disabled, restart policy `ALWAYS`, health check `/healthz`, 40-second drain and zero overlap. These are low-volume reference limits; qualify concurrent calls before raising traffic. This bridge needs no volume, GPU or database connection.
 
-Generate a Railway domain targeting port 8000. Set `PUBLIC_BASE_URL` to its exact HTTPS origin, `PORT=8000` and the three credentials described above as service variables. Deploy from the repository root with a project token in `RAILWAY_TOKEN`:
+Generate a Railway domain targeting port 8000. Set `PUBLIC_BASE_URL` to its exact HTTPS origin, `PORT=8000` and the three credentials described above as service variables. For an Amp orb, make the needed secrets available in the recipe's Amp project settings, never in a thread or the repository. Dialt's auxiliary environment-scoped token is named `RAILWAY_AUXILIARY_TOKEN`; map it to the CLI's `RAILWAY_TOKEN`. Verify that the token resolves to `dialt-auxiliary` and the intended environment before creating or deploying a service. Do not substitute the core dev/production tokens. Deploy from the repository root:
 
 ```sh
-railway up --project <project-id> --environment <environment-id> --service <service-id> --detach
+RAILWAY_TOKEN="$RAILWAY_AUXILIARY_TOKEN" railway up \
+  --project <auxiliary-project-id> --environment <environment-id> --service <new-service-id> --detach
 ```
 
 This uploads the local source, including unpushed edits. Record the deployment ID and preserve the deployed source in Git before handing off maintenance. CLI uploads have no automatic GitHub branch trigger. A redeploy replaces live WebSockets, so release while the line is idle; the drain timeout does not provide seamless call migration.
