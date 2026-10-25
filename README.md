@@ -117,8 +117,15 @@ A case is one JSON file, the same document the hosted evals API accepts: `name`,
 `target.greeting`, when the agent opens the call and the simulated user answers it), `target`
 (`instructions`, `tools`, `end_call`), `simulator` (`instructions`), `fixtures`, `checks` and
 `limits`. Both sides are Dialt sessions, so `target.instructions` and `simulator.instructions` are
-required and each states that side's role. [`examples/simulations/appointment_booking.json`](examples/simulations/appointment_booking.json)
-is a complete one. Field reference: the [evals guide](https://dialt.com/docs/api/evals/).
+required and each states that side's role. `target` is the system under test, which the checks
+assess; `simulator` is its controlled conversation partner, held fixed across a comparison. Either
+can play any scenario role.
+[`examples/simulations/appointment_booking.json`](examples/simulations/appointment_booking.json)
+evaluates a clinic agent with a simulated caller, and
+[`examples/simulations/patient_interview.json`](examples/simulations/patient_interview.json)
+evaluates a simulated patient (the target) with a scripted clinician (the simulator). Transcript
+`assistant` rows are always the target's and `user` rows the simulator's. Field reference: the
+[evals guide](https://dialt.com/docs/api/evals/#roles).
 
 The agent ends a call by calling the managed `end_call` tool, which `target.end_call` (default
 true) gives it; set it to false for an agent that must never hang up, or to
@@ -162,8 +169,10 @@ Local simulations explicitly default the assistant to Circuit and the simulated 
 Male (`classic`), preserving case-specific voices. A `starter` is the caller's greeting in both
 text and voice, so both sides receive it through the conversation relay; it is limited to 300
 characters. Local simulations use Fast for the assistant and Smart for the simulated caller.
-Hosted comparisons select assistant tiers through `--targets`; tier selection belongs to the run,
-so case documents do not set `target.brain` or `simulator.brain`.
+Hosted comparisons select the target's tier through `--targets`; tier selection belongs to the
+run, so case documents do not set `target.brain` or `simulator.brain`. Explicit `--targets`
+override a target Design's saved tier (the check prints each override as a warning) and never
+change the simulator.
 
 With `--wait` the command exits non-zero unless the run passes, so it can gate a CI job in your
 agent's repository: put `DIALT_API_KEY` in a secret and run it on every change to the agent or
