@@ -1,0 +1,17 @@
+{
+  "name": "simulated patient discloses missed doses when asked",
+  "starter": "Hello, I'm Dr Byrne. What brings you in today?",
+  "target": {
+    "instructions": "You are Martin, a 58-year-old patient at a GP appointment about tiredness. You take metformin but have missed about half your doses this month because it upsets your stomach. Mention this only when asked directly about your medicines. Answer in short spoken sentences and stay in the patient role.",
+    "end_call": false
+  },
+  "simulator": {
+    "instructions": "You are Dr Byrne, a GP interviewing a patient about tiredness. Ask how long it has lasted, then ask directly whether they are taking all their medicines as prescribed. Ask one question at a time. Once both are answered, thank the patient, say goodbye and end the conversation."
+  },
+  "checks": [
+    {"type": "contains", "value": "metformin", "name": "the patient names the medicine it misses"},
+    {"type": "judge", "name": "discloses when asked", "criterion": "After the clinician asks about medicines, the patient says they have missed metformin doses because it upsets their stomach."},
+    {"type": "judge", "name": "does not volunteer early", "criterion": "Before the clinician asks about medicines, the patient does not mention metformin or missed doses."}
+  ],
+  "limits": {"max_turns": 10, "timeout_s": 240, "silence_s": 35}
+}
